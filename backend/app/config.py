@@ -9,8 +9,9 @@ load_dotenv(BASE_DIR / ".env")
 
 
 class Settings:
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'app' / 'analitik.db'}")
+    # Penyimpanan data: file JSON (bukan SQL), dipisah per kategori & tanggal
+    # supaya tiap file tetap kecil — lihat app/db/store.py.
+    DATA_DIR: Path = Path(os.getenv("DATA_DIR", str(BASE_DIR / "app" / "data")))
 
     # Model YOLO
     MODEL_PATH: str = os.getenv("MODEL_PATH", str(BASE_DIR / "app" / "models_weights" / "yolo11n.pt"))
@@ -52,4 +53,5 @@ class Settings:
 
 settings = Settings()
 settings.SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 Path(settings.MODEL_PATH).parent.mkdir(parents=True, exist_ok=True)

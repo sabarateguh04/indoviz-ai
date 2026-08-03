@@ -10,6 +10,7 @@ backend/*.sqlite3
 backend/**/*.db
 backend/**/*.sqlite3
 backend/instance/
+backend/app/data/
 frontend/node_modules/
 frontend/dist/
 frontend/build/

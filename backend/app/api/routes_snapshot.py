@@ -1,19 +1,17 @@
 """Ambil 1 frame terbaru dari RTSP kamera tertentu, dipakai sebagai gambar
 background di `ZoneEditor.jsx` (frontend) untuk menggambar poligon zona."""
 import cv2
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Response
 
 from app.core.rtsp_utils import capture_snapshot
-from app.db.models import Camera
-from app.db.session import get_db
+from app.db import store
 
 router = APIRouter(prefix="/api/snapshot", tags=["snapshot"])
 
 
 @router.get("/{camera_id}")
-def get_snapshot(camera_id: int, db: Session = Depends(get_db)):
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+def get_snapshot(camera_id: int):
+    camera = store.get_camera(camera_id)
     if camera is None:
         raise HTTPException(status_code=404, detail="Kamera tidak ditemukan")
 

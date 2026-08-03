@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import routes_cameras, routes_snapshot, routes_stats, routes_ws, routes_zones
 from app.core import stream_worker
-from app.db.session import init_db
+from app.db.store import init_store
 
 logging.basicConfig(level=logging.INFO)
 
@@ -35,7 +35,7 @@ def health():
 
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    init_store()
     stream_worker.set_main_loop(asyncio.get_event_loop())
     stream_worker.worker_manager.refresh_from_db()
 

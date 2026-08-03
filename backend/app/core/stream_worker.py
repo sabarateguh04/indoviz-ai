@@ -11,7 +11,6 @@ dinamis saat kamera ditambah/diedit/dihapus dari UI, tanpa restart backend.
 """
 import asyncio
 import base64
-import datetime
 import logging
 import threading
 import time
@@ -27,8 +26,7 @@ from app.core.detector import VehicleDetector
 from app.core.state import CameraState
 from app.core.tracker import extract_detections
 from app.core.zones import RuntimeZone
-from app.db.models import Alert, Camera, CountHistory, Zone
-from app.db.session import SessionLocal
+from app.db import store
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +79,8 @@ class StreamWorker(threading.Thread):
     def stop(self):
         self._stop_event.set()
 
-    def _load_zones(self, db):
-        rows = db.query(Zone).filter(Zone.camera_id == self.camera_id).all()
+    def _load_zones(self):
+        rows = store.list_zones(self.camera_id)
         self.zones = [
             RuntimeZone(
                 id=z.id,
@@ -97,29 +95,15 @@ class StreamWorker(threading.Thread):
         self._last_zone_refresh = time.time()
 
     def _set_status(self, status: str):
-        db = SessionLocal()
-        try:
-            cam = db.query(Camera).filter(Camera.id == self.camera_id).first()
-            if cam and cam.status != status:
-                cam.status = status
-                db.commit()
-        finally:
-            db.close()
-
-    def _get_camera(self, db):
-        return db.query(Camera).filter(Camera.id == self.camera_id).first()
+        store.set_camera_status(self.camera_id, status)
 
     def run(self):
-        db = SessionLocal()
-        try:
-            camera = self._get_camera(db)
-            if camera is None:
-                return
-            rtsp_url = camera.rtsp_url
-            imgsz = camera.imgsz or settings.IMGSZ_DEFAULT
-            self._load_zones(db)
-        finally:
-            db.close()
+        camera = store.get_camera(self.camera_id)
+        if camera is None:
+            return
+        rtsp_url = camera.rtsp_url
+        imgsz = camera.imgsz or settings.IMGSZ_DEFAULT
+        self._load_zones()
 
         detector = VehicleDetector.get_shared()
         cap = cv2.VideoCapture(rtsp_url)
@@ -154,16 +138,12 @@ class StreamWorker(threading.Thread):
                 self._frame_times.append(now)
 
                 if now - self._last_zone_refresh > ZONE_REFRESH_INTERVAL:
-                    db = SessionLocal()
-                    try:
-                        self._load_zones(db)
-                        camera = self._get_camera(db)
-                        if camera is None:
-                            break  # kamera sudah dihapus dari UI
-                        if not camera.active:
-                            break  # kamera dinonaktifkan dari UI
-                    finally:
-                        db.close()
+                    self._load_zones()
+                    camera = store.get_camera(self.camera_id)
+                    if camera is None:
+                        break  # kamera sudah dihapus dari UI
+                    if not camera.active:
+                        break  # kamera dinonaktifkan dari UI
 
                 result = detector.track(frame, imgsz=imgsz)
                 detections = extract_detections(result)
@@ -200,29 +180,21 @@ class StreamWorker(threading.Thread):
             self._set_status("offline")
 
     def _persist_events(self, count_events, wrong_way_events, parking_events, lane_events):
-        db = SessionLocal()
-        try:
-            hour_bucket = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-            for ev in count_events:
-                db.add(CountHistory(camera_id=self.camera_id, zone_id=ev.zone_id, kelas=ev.kelas,
-                                     jumlah=1, jam=hour_bucket))
+        if count_events:
+            store.append_count_events(self.camera_id, count_events)
 
-            for ev in wrong_way_events:
-                db.add(Alert(camera_id=self.camera_id, zone_id=ev.zone_id, tipe="wrong_way",
-                              track_id=ev.track_id, pesan=f"Kendaraan {ev.kelas} melawan arah"))
-
-            for ev in parking_events:
-                db.add(Alert(camera_id=self.camera_id, zone_id=ev.zone_id, tipe="illegal_parking",
-                              track_id=ev.track_id,
-                              pesan=f"Kendaraan {ev.kelas} berhenti {ev.durasi_detik:.0f}s di zona larangan parkir"))
-
-            for ev in lane_events:
-                db.add(Alert(camera_id=self.camera_id, zone_id=ev.zone_id, tipe="lane_violation",
-                              track_id=ev.track_id, pesan=f"Kendaraan {ev.kelas} keluar dari jalur"))
-
-            db.commit()
-        finally:
-            db.close()
+        alerts = []
+        for ev in wrong_way_events:
+            alerts.append({"zone_id": ev.zone_id, "tipe": "wrong_way", "track_id": ev.track_id,
+                            "pesan": f"Kendaraan {ev.kelas} melawan arah"})
+        for ev in parking_events:
+            alerts.append({"zone_id": ev.zone_id, "tipe": "illegal_parking", "track_id": ev.track_id,
+                            "pesan": f"Kendaraan {ev.kelas} berhenti {ev.durasi_detik:.0f}s di zona larangan parkir"})
+        for ev in lane_events:
+            alerts.append({"zone_id": ev.zone_id, "tipe": "lane_violation", "track_id": ev.track_id,
+                            "pesan": f"Kendaraan {ev.kelas} keluar dari jalur"})
+        if alerts:
+            store.append_alerts(self.camera_id, alerts)
 
     def _broadcast_frame_data(self, frame, fps, detections, speeds, congestion_status, count_events,
                                wrong_way_events, parking_events, lane_events):
@@ -293,14 +265,9 @@ class StreamWorkerManager:
         self.start_camera(camera_id)
 
     def refresh_from_db(self):
-        """Sinkronkan worker yang berjalan dengan daftar kamera aktif di DB.
-        Dipanggil saat startup aplikasi."""
-        db = SessionLocal()
-        try:
-            active_cameras = db.query(Camera).filter(Camera.active.is_(True)).all()
-        finally:
-            db.close()
-
+        """Sinkronkan worker yang berjalan dengan daftar kamera aktif di
+        penyimpanan JSON. Dipanggil saat startup aplikasi."""
+        active_cameras = store.list_active_cameras()
         active_ids = {c.id for c in active_cameras}
         with self._lock:
             running_ids = set(self.workers.keys())

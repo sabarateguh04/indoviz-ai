@@ -33,7 +33,7 @@ Backend jalan di `http://localhost:8000`. Dokumentasi API otomatis di
 ## Alur kerja
 
 1. Tambah kamera lewat endpoint `/api/cameras` (atau lewat UI frontend) —
-   isi nama + RTSP URL. Semua kamera dikelola lewat database, TIDAK
+   isi nama + RTSP URL. Semua kamera dikelola lewat penyimpanan JSON, TIDAK
    hardcode di `.env`.
 2. Setelah kamera tersimpan, ambil snapshot lewat `/api/snapshot/{id}` untuk
    dipakai sebagai background gambar poligon zona.
@@ -44,6 +44,24 @@ Backend jalan di `http://localhost:8000`. Dokumentasi API otomatis di
    di background thread — tidak perlu restart backend.
 5. Data live (bbox, counting, alert, kepadatan) di-broadcast lewat
    WebSocket `/ws/live`. Statistik agregat tersedia lewat `/api/stats/*`.
+
+## Penyimpanan data
+
+Tidak pakai SQLite/PostgreSQL — semua data disimpan sebagai file JSON di
+`app/data/` (path diatur lewat `DATA_DIR` di `.env`), dipisah per kategori
+dan per tanggal supaya tiap file tetap kecil:
+
+```
+app/data/
+  cameras.json             # daftar kamera (kategori, jarang berubah)
+  zones.json               # daftar zona (kategori, jarang berubah)
+  counts/2026-08-03.jsonl  # event counting kendaraan, 1 file per hari
+  alerts/2026-08-03.jsonl  # event alert (wrong-way/parkir liar/dsb), 1 file per hari
+```
+
+`counts/` dan `alerts/` pakai format JSONL (1 baris = 1 event, append-only)
+supaya tidak perlu baca+tulis ulang seluruh histori tiap ada event baru.
+Folder `app/data/` di-gitignore karena isinya data runtime, bukan kode.
 
 ## Uji coba tanpa kamera CCTV asli
 

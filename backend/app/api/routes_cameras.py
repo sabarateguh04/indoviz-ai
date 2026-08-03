@@ -3,17 +3,17 @@
 Menambah/mengedit/menghapus kamera di sini langsung memicu start/stop
 worker terkait (`stream_worker.worker_manager`) — backend TIDAK perlu
 di-restart supaya kamera baru langsung mulai diproses.
+
+Data kamera disimpan sebagai file JSON (`app/db/store.py`), bukan SQL.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from app.core.rtsp_utils import test_connection
 from app.core.stream_worker import worker_manager
-from app.db.models import Camera
-from app.db.session import get_db
+from app.db import store
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -57,13 +57,13 @@ class CameraOut(BaseModel):
 
 
 @router.get("", response_model=list[CameraOut])
-def list_cameras(db: Session = Depends(get_db)):
-    return db.query(Camera).all()
+def list_cameras():
+    return store.list_cameras()
 
 
 @router.get("/{camera_id}", response_model=CameraOut)
-def get_camera(camera_id: int, db: Session = Depends(get_db)):
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+def get_camera(camera_id: int):
+    camera = store.get_camera(camera_id)
     if camera is None:
         raise HTTPException(status_code=404, detail="Kamera tidak ditemukan")
     return camera
@@ -76,18 +76,16 @@ def test_camera_connection(payload: TestConnectionRequest):
 
 
 @router.post("", response_model=CameraOut)
-def create_camera(payload: CameraCreate, db: Session = Depends(get_db)):
-    camera = Camera(
-        nama=payload.nama,
-        rtsp_url=payload.rtsp_url,
-        imgsz=payload.imgsz,
-        speed_calibration=payload.speed_calibration.model_dump() if payload.speed_calibration else None,
-        active=payload.active,
-        status="offline",
+def create_camera(payload: CameraCreate):
+    camera = store.create_camera(
+        {
+            "nama": payload.nama,
+            "rtsp_url": payload.rtsp_url,
+            "imgsz": payload.imgsz,
+            "speed_calibration": payload.speed_calibration.model_dump() if payload.speed_calibration else None,
+            "active": payload.active,
+        }
     )
-    db.add(camera)
-    db.commit()
-    db.refresh(camera)
 
     if camera.active:
         worker_manager.start_camera(camera.id)
@@ -96,26 +94,23 @@ def create_camera(payload: CameraCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{camera_id}", response_model=CameraOut)
-def update_camera(camera_id: int, payload: CameraUpdate, db: Session = Depends(get_db)):
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if camera is None:
+def update_camera(camera_id: int, payload: CameraUpdate):
+    existing = store.get_camera(camera_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="Kamera tidak ditemukan")
 
-    rtsp_changed = payload.rtsp_url is not None and payload.rtsp_url != camera.rtsp_url
+    rtsp_changed = payload.rtsp_url is not None and payload.rtsp_url != existing.rtsp_url
 
-    if payload.nama is not None:
-        camera.nama = payload.nama
-    if payload.rtsp_url is not None:
-        camera.rtsp_url = payload.rtsp_url
-    if payload.imgsz is not None:
-        camera.imgsz = payload.imgsz
-    if payload.speed_calibration is not None:
-        camera.speed_calibration = payload.speed_calibration.model_dump()
-    if payload.active is not None:
-        camera.active = payload.active
-
-    db.commit()
-    db.refresh(camera)
+    camera = store.update_camera(
+        camera_id,
+        {
+            "nama": payload.nama,
+            "rtsp_url": payload.rtsp_url,
+            "imgsz": payload.imgsz,
+            "speed_calibration": payload.speed_calibration.model_dump() if payload.speed_calibration else None,
+            "active": payload.active,
+        },
+    )
 
     if camera.active and (rtsp_changed or payload.active is True):
         worker_manager.restart_camera(camera.id)
@@ -126,12 +121,11 @@ def update_camera(camera_id: int, payload: CameraUpdate, db: Session = Depends(g
 
 
 @router.delete("/{camera_id}")
-def delete_camera(camera_id: int, db: Session = Depends(get_db)):
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if camera is None:
+def delete_camera(camera_id: int):
+    existing = store.get_camera(camera_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="Kamera tidak ditemukan")
 
     worker_manager.stop_camera(camera_id)
-    db.delete(camera)
-    db.commit()
+    store.delete_camera(camera_id)
     return {"ok": True}

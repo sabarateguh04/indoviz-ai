@@ -7,12 +7,10 @@ backend.
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
-from sqlalchemy.orm import Session
 
-from app.db.models import Zone
-from app.db.session import get_db
+from app.db import store
 
 router = APIRouter(prefix="/api/zones", tags=["zones"])
 
@@ -75,61 +73,49 @@ class ZoneOut(BaseModel):
 
 
 @router.get("", response_model=list[ZoneOut])
-def list_zones(camera_id: Optional[int] = None, db: Session = Depends(get_db)):
-    query = db.query(Zone)
-    if camera_id is not None:
-        query = query.filter(Zone.camera_id == camera_id)
-    return query.all()
+def list_zones(camera_id: Optional[int] = None):
+    return store.list_zones(camera_id)
 
 
 @router.get("/{zone_id}", response_model=ZoneOut)
-def get_zone(zone_id: int, db: Session = Depends(get_db)):
-    zone = db.query(Zone).filter(Zone.id == zone_id).first()
+def get_zone(zone_id: int):
+    zone = store.get_zone(zone_id)
     if zone is None:
         raise HTTPException(status_code=404, detail="Zona tidak ditemukan")
     return zone
 
 
 @router.post("", response_model=ZoneOut)
-def create_zone(payload: ZoneCreate, db: Session = Depends(get_db)):
-    zone = Zone(
-        camera_id=payload.camera_id,
-        nama=payload.nama,
-        tipe_zona=payload.tipe_zona,
-        koordinat=payload.koordinat,
-        arah_normal_deg=payload.arah_normal_deg,
+def create_zone(payload: ZoneCreate):
+    return store.create_zone(
+        {
+            "camera_id": payload.camera_id,
+            "nama": payload.nama,
+            "tipe_zona": payload.tipe_zona,
+            "koordinat": payload.koordinat,
+            "arah_normal_deg": payload.arah_normal_deg,
+        }
     )
-    db.add(zone)
-    db.commit()
-    db.refresh(zone)
-    return zone
 
 
 @router.put("/{zone_id}", response_model=ZoneOut)
-def update_zone(zone_id: int, payload: ZoneUpdate, db: Session = Depends(get_db)):
-    zone = db.query(Zone).filter(Zone.id == zone_id).first()
+def update_zone(zone_id: int, payload: ZoneUpdate):
+    zone = store.update_zone(
+        zone_id,
+        {
+            "nama": payload.nama,
+            "tipe_zona": payload.tipe_zona,
+            "koordinat": payload.koordinat,
+            "arah_normal_deg": payload.arah_normal_deg,
+        },
+    )
     if zone is None:
         raise HTTPException(status_code=404, detail="Zona tidak ditemukan")
-
-    if payload.nama is not None:
-        zone.nama = payload.nama
-    if payload.tipe_zona is not None:
-        zone.tipe_zona = payload.tipe_zona
-    if payload.koordinat is not None:
-        zone.koordinat = payload.koordinat
-    if payload.arah_normal_deg is not None:
-        zone.arah_normal_deg = payload.arah_normal_deg
-
-    db.commit()
-    db.refresh(zone)
     return zone
 
 
 @router.delete("/{zone_id}")
-def delete_zone(zone_id: int, db: Session = Depends(get_db)):
-    zone = db.query(Zone).filter(Zone.id == zone_id).first()
-    if zone is None:
+def delete_zone(zone_id: int):
+    if not store.delete_zone(zone_id):
         raise HTTPException(status_code=404, detail="Zona tidak ditemukan")
-    db.delete(zone)
-    db.commit()
     return {"ok": True}
