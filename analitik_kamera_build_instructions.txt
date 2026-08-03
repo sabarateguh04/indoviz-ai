@@ -1,0 +1,302 @@
+========================================================================
+INSTRUKSI BUILD PROYEK — ANALITIK KAMERA (IndoVIS)
+File ini untuk dijalankan/diikuti oleh Claude Code.
+========================================================================
+
+TUJUAN
+------
+Bangun ulang / kembangkan sistem analitik CCTV "IndoVIS" (counting
+kendaraan + fitur analitik lanjutan) menjadi satu proyek terstruktur
+dengan folder berikut:
+
+    analitik_kamera/
+    ├── backend/     -> Python (FastAPI)
+    └── frontend/    -> Node.js (React + Vite)
+
+Fitur yang dibangun adalah fitur yang SUDAH BISA berjalan di perangkat
+saat ini (GPU NVIDIA RTX 3060 Ti 8GB, CPU i9-10900K, RAM 32GB),
+kapasitas target: 8-15 stream RTSP bersamaan. JANGAN implementasikan
+dulu fitur yang butuh model AI tambahan (ANPR, deteksi helm, deteksi
+lampu merah, deteksi kecelakaan, multi-camera re-id) — itu fase
+berikutnya setelah upgrade infrastruktur.
+
+
+STRUKTUR FOLDER YANG HARUS DIBUAT
+----------------------------------
+analitik_kamera/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # entrypoint FastAPI
+│   │   ├── config.py                # konfigurasi (path model, RTSP url, zona, dsb)
+│   │   ├── core/
+│   │   │   ├── detector.py          # wrapper YOLO (ultralytics)
+│   │   │   ├── tracker.py           # ByteTrack / object tracking
+│   │   │   ├── stream_worker.py     # 1 worker per RTSP stream (decode+infer+track)
+│   │   │   └── zones.py             # definisi & util polygon zona/garis counting
+│   │   ├── analytics/
+│   │   │   ├── counting.py          # counting per kelas kendaraan
+│   │   │   ├── speed.py             # estimasi kecepatan
+│   │   │   ├── wrong_way.py         # deteksi lawan arah
+│   │   │   ├── illegal_parking.py   # deteksi parkir liar / berhenti di zona larangan
+│   │   │   ├── congestion.py        # tingkat kepadatan per zona
+│   │   │   └── lane_violation.py    # deteksi pelanggaran jalur
+│   │   ├── api/
+│   │   │   ├── routes_cameras.py    # CRUD kamera (tambah/edit/hapus RTSP URL) + test koneksi
+│   │   │   ├── routes_zones.py      # CRUD poligon zona per kamera (counting/no-parking/arah/jalur)
+│   │   │   ├── routes_snapshot.py   # ambil 1 frame terbaru dari RTSP -> background utk gambar poligon
+│   │   │   ├── routes_stats.py      # endpoint statistik/agregat
+│   │   │   └── routes_ws.py         # websocket untuk data live ke frontend
+│   │   ├── db/
+│   │   │   ├── models.py            # SQLAlchemy models
+│   │   │   └── session.py
+│   │   └── models_weights/          # taruh file .pt YOLO nano di sini (gitignore)
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── README.md
+│
+└── frontend/
+    ├── src/
+    │   ├── main.jsx
+    │   ├── App.jsx
+    │   ├── components/
+    │   │   ├── CameraGrid.jsx       # layout 2x2 / 1+3 / wide / single (seperti dashboard existing)
+    │   │   ├── CameraCard.jsx       # video player + overlay bbox + label REC/fps
+    │   │   ├── CameraManager.jsx    # daftar kamera + tombol "Tambah Kamera" (CRUD)
+    │   │   ├── AddCameraModal.jsx   # form tambah kamera: nama, RTSP URL, test koneksi
+    │   │   ├── ZoneEditor.jsx       # canvas untuk gambar poligon zona di atas snapshot kamera
+    │   │   ├── StatsSidebar.jsx     # total motor/mobil/bus/truk hari ini
+    │   │   ├── VolumeChart.jsx      # grafik volume per jam
+    │   │   ├── AlertPanel.jsx       # notifikasi wrong-way / parkir liar / dsb
+    │   │   └── TopBar.jsx           # judul, jam live, status backend
+    │   ├── hooks/
+    │   │   └── useCameraSocket.js   # koneksi websocket ke backend
+    │   ├── services/
+    │   │   └── api.js
+    │   └── styles/
+    ├── package.json
+    ├── vite.config.js
+    └── README.md
+
+
+TECH STACK
+----------
+Backend:
+- Python 3.11+
+- FastAPI + Uvicorn (REST API + WebSocket)
+- ultralytics (YOLOv8n atau YOLO11n — model nano untuk multi-stream)
+- OpenCV (video capture RTSP, hardware decode kalau tersedia)
+- Tracker: ByteTrack (built-in ultralytics `model.track()`) untuk ID
+  kontinuitas antar frame — WAJIB, karena semua fitur analitik
+  lanjutan (speed, wrong-way, dsb) butuh ID tracking, bukan cuma
+  deteksi per-frame
+- SQLAlchemy + SQLite (boleh diganti PostgreSQL nanti) untuk simpan
+  histori counting per jam/hari
+- python-dotenv untuk konfigurasi
+
+Frontend:
+- Node.js 20+
+- React + Vite
+- TailwindCSS untuk styling (ikuti tone dashboard existing: biru/putih,
+  card rounded, badge REC merah, badge fps)
+- socket.io-client atau native WebSocket untuk data live
+- Recharts untuk grafik volume per jam
+- HLS.js atau library sejenis untuk render stream video di browser
+  (RTSP tidak native di browser — backend perlu expose ke format
+  HLS/WebRTC, atau kirim frame terproses sebagai MJPEG/base64 via
+  websocket kalau mau lebih simpel di tahap awal)
+
+
+FITUR YANG WAJIB DIBANGUN (SESUAI REKOMENDASI)
+------------------------------------------------
+1. Manajemen kamera & zona (UI setup) — PRASYARAT semua fitur di bawah
+   - Tambah kamera baru: form input nama kamera + RTSP URL, tombol
+     "Test Koneksi" (backend coba konek ke RTSP, kasih tahu berhasil/
+     gagal sebelum disimpan)
+   - Edit/hapus kamera yang sudah ada
+   - Editor poligon zona: setelah kamera tersimpan, ambil 1 snapshot
+     frame dari RTSP-nya (endpoint routes_snapshot.py) sebagai gambar
+     background, lalu user gambar poligon di atas gambar itu pakai
+     canvas (klik titik demi titik, tutup poligon)
+   - Tiap poligon punya "tipe zona" yang dipilih user: zona counting,
+     zona larangan parkir, zona arah (untuk wrong-way, tandai arah
+     panah normal), zona jalur (untuk lane violation)
+   - Simpan koordinat poligon (relatif ke resolusi frame) ke database
+     lewat routes_zones.py, terhubung ke kamera terkait
+   - Sistem HARUS bisa jalan tanpa restart backend setelah kamera/zona
+     baru ditambahkan — stream_worker.py baca konfigurasi kamera aktif
+     dari database, bukan hardcode di .env
+
+2. Counting kendaraan per jenis (motor, mobil, bus, truk) real-time
+   - per kamera dan agregat total
+   - simpan histori per jam untuk grafik volume
+
+3. Dashboard live multi-kamera
+   - layout switchable: 2x2, 1+3, wide, single (lihat referensi
+     dashboard lama sebagai acuan UX)
+   - overlay polygon zona deteksi di video
+   - badge REC + fps per kamera
+   - status koneksi kamera (online/warning/offline)
+
+4. Grafik volume kendaraan per jam (bar chart harian)
+
+5. Estimasi kecepatan kendaraan
+   - butuh kalibrasi jarak nyata per kamera (config per-kamera:
+     titik referensi piksel -> jarak meter)
+   - hitung dari perpindahan posisi centroid objek antar frame
+     dibagi waktu, dikonversi pakai kalibrasi
+
+6. Deteksi kendaraan melawan arah (wrong-way)
+   - pakai zona bertipe "arah" yang sudah digambar di poin 1
+   - bandingkan vektor arah gerak tracked object dengan arah normal
+
+7. Deteksi parkir liar / berhenti di zona terlarang
+   - pakai zona bertipe "larangan parkir" dari poin 1
+   - objek diam (delta posisi < threshold) di dalam poligon tsb
+     selama > N detik -> trigger alert
+
+8. Estimasi tingkat kepadatan/kemacetan per zona
+   - hitung jumlah objek per zona per interval waktu
+   - klasifikasi level: lengang / padat / macet (threshold
+     dikonfigurasi)
+
+9. Deteksi pelanggaran jalur
+   - pakai zona bertipe "jalur" dari poin 1
+   - objek keluar dari poligon jalur yang seharusnya
+
+Semua fitur di atas WAJIB dibangun sebagai modul terpisah di
+`backend/app/analytics/`, dipanggil dari `stream_worker.py` per frame
+hasil tracking — jangan bikin model AI terpisah untuk tiap fitur,
+karena semuanya cukup pakai output tracker yang sama (bbox + track_id
++ class + posisi per frame).
+
+
+CATATAN PENTING SOAL AKURASI
+-----------------------------
+- Model default: YOLOv8n / YOLO11n dengan confidence threshold
+  terpisah untuk kelas motor (lebih rendah, misal 0.25-0.3) karena
+  motor sering tidak terdeteksi di model nano akibat ukuran objek
+  kecil.
+- imgsz default 640, tapi buat konfigurasi per-kamera supaya bisa
+  dinaikkan ke 960/1280 khusus kamera dengan banyak motor kecil.
+- Siapkan struktur agar model bisa di-fine-tune nanti dengan dataset
+  lokal (folder `training/` terpisah, tidak perlu dibangun sekarang,
+  cukup siapkan tempatnya).
+- Semua fitur analitik lanjutan (speed, wrong-way, dsb) akan mewarisi
+  akurasi model deteksi dasar — jangan buat asumsi akurasi lebih
+  tinggi dari model dasarnya.
+
+
+LANGKAH KERJA UNTUK CLAUDE CODE
+---------------------------------
+1. Buat struktur folder `analitik_kamera/backend` dan
+   `analitik_kamera/frontend` sesuai di atas.
+2. Bangun backend dulu:
+   a. Setup FastAPI app + struktur folder + requirements.txt
+   b. Implementasikan DB models untuk Camera (id, nama, rtsp_url,
+      status) dan Zone (id, camera_id, tipe_zona, koordinat poligon
+      dalam bentuk list [x,y] relatif ke resolusi frame)
+   c. Implementasikan `routes_cameras.py` (CRUD kamera + endpoint
+      test koneksi RTSP) dan `routes_snapshot.py` (ambil 1 frame
+      terbaru dari RTSP kamera tertentu, kirim sebagai image response
+      untuk background editor poligon)
+   d. Implementasikan `routes_zones.py` (CRUD poligon zona per
+      kamera, validasi minimal 3 titik per poligon)
+   e. Implementasikan `detector.py` (load YOLO nano) dan
+      `tracker.py` (pakai `model.track()` bawaan ultralytics)
+   f. Implementasikan `stream_worker.py`: baca daftar kamera aktif
+      dari database (bukan hardcode) -> loop baca RTSP -> infer ->
+      track -> load poligon zona kamera tsb dari DB -> panggil semua
+      modul di `analytics/` -> broadcast hasil via websocket + simpan
+      ke DB. Worker harus bisa start/stop per kamera secara dinamis
+      saat kamera baru ditambah/dihapus dari UI (tanpa restart
+      backend penuh)
+   g. Implementasikan `routes_stats.py` (statistik/agregat) dan
+      `routes_ws.py` (websocket data live: bbox, counting, alert)
+3. Bangun frontend:
+   a. Setup Vite + React + Tailwind
+   b. Bangun `CameraManager.jsx` + `AddCameraModal.jsx`: form tambah
+      kamera (nama + RTSP URL), tombol test koneksi, daftar kamera
+      tersimpan dengan aksi edit/hapus
+   c. Bangun `ZoneEditor.jsx`: setelah kamera dipilih, fetch snapshot
+      dari backend, tampilkan sebagai background canvas, user klik
+      titik-titik untuk gambar poligon, pilih tipe zona dari
+      dropdown (counting/larangan parkir/arah/jalur), tombol simpan
+      -> kirim ke `routes_zones.py`
+   d. Bangun komponen dashboard mengikuti referensi UX lama (grid
+      kamera, sidebar total hari ini, grafik volume per jam, alert
+      panel untuk wrong-way/parkir liar)
+   e. Hubungkan ke backend via REST (data awal, CRUD kamera/zona) +
+      WebSocket (data live)
+4. Tambahkan `.env.example` di backend berisi: DATABASE_URL,
+   MODEL_PATH, CONF_THRESHOLD_DEFAULT, CONF_THRESHOLD_MOTOR,
+   IMGSZ_DEFAULT (RTSP URL TIDAK di-hardcode di .env lagi — semua
+   kamera dikelola lewat UI & tersimpan di database)
+5. Tambahkan README.md singkat di masing-masing folder: cara install
+   dependency dan cara menjalankan (`uvicorn app.main:app --reload`
+   untuk backend, `npm run dev` untuk frontend)
+6. Setelah struktur & fitur dasar jalan, jalankan test manual: pakai
+   1 file video lokal sebagai pengganti RTSP dulu untuk verifikasi
+   pipeline sebelum sambung ke kamera CCTV asli.
+
+Jangan implementasikan ANPR, deteksi helm, deteksi lampu merah,
+deteksi kecelakaan, atau multi-camera tracking di tahap ini — itu di
+luar scope kapasitas perangkat saat ini.
+
+
+GIT & PUSH KE REPOSITORY
+--------------------------
+Repo target: http://github.com/sabarateguh04/indoviz-ai
+
+1. Taruh file `.gitignore` dan `README.md` (sudah disiapkan terpisah,
+   pastikan ikut di-copy ke root folder `analitik_kamera/`) di root
+   folder proyek `analitik_kamera/` SEBELUM commit pertama — supaya
+   file besar/sensitif (venv, node_modules, .env, file model .pt,
+   database lokal) tidak ikut ter-commit.
+2. Jalankan di root folder `analitik_kamera/`:
+   ```
+   git init
+   git remote add origin http://github.com/sabarateguh04/indoviz-ai
+   git add .
+   git commit -m "Initial commit: struktur proyek analitik_kamera (backend FastAPI + frontend React)"
+   git branch -M main
+   git push -u origin main
+   ```
+3. Kalau repo remote sudah ada isinya sebelumnya (bukan repo kosong),
+   jalankan `git pull origin main --allow-unrelated-histories` dulu
+   sebelum push, selesaikan konflik kalau ada, baru push.
+4. Pastikan tidak ada file `.env` (backend/frontend) maupun file bobot
+   model (`.pt`) yang ikut ter-commit — cek dengan `git status`
+   sebelum commit, dan `git rm --cached <file>` kalau ada yang salah
+   ikut ter-tracking.
+
+
+PUSH UPDATE SELANJUTNYA (setelah initial commit di atas)
+------------------------------------------------------------
+Setiap kali SEMUA perubahan/update pada suatu tahap pengerjaan sudah
+selesai dan sudah dites jalan (backend & frontend tidak error),
+jalankan urutan berikut di root folder `analitik_kamera/` untuk push
+perubahan terbaru ke repository:
+
+```
+git add .
+git status
+```
+(cek dulu daftar file yang mau ter-commit — pastikan tidak ada .env,
+node_modules, venv, atau file model .pt yang ikut, kalau ada file yang
+salah ikut, jalankan `git restore --staged <file>` sebelum lanjut)
+
+```
+git commit -m "<tulis ringkas fitur/perubahan yang diselesaikan>"
+git push origin main
+```
+
+Contoh pesan commit yang jelas (sesuaikan dengan update yang benar-benar
+dikerjakan saat itu):
+- "Tambah fitur manajemen kamera & editor poligon zona"
+- "Implementasi speed estimation dan wrong-way detection"
+- "Perbaikan akurasi deteksi motor + confidence threshold per kelas"
+
+Jangan push kalau ada error yang belum diperbaiki atau kalau fitur yang
+sedang dikerjakan belum lengkap setengah jalan — pastikan setiap push
+merepresentasikan kondisi kode yang utuh dan bisa dijalankan.
+========================================================================
