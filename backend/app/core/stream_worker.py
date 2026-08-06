@@ -158,7 +158,15 @@ class StreamWorker(threading.Thread):
                     detections = extract_detections(result)
 
                     for det in detections:
-                        self.state.update_track_position(det.track_id, det.class_name, det.centroid, now)
+                        # Timpa class_name mentah dgn kelas STABIL hasil voting
+                        # per track_id (lihat CameraState.update_track_position)
+                        # -- semua proses di bawah ini (counting, speed,
+                        # wrong-way, dll) dan broadcast ke frontend jadi ikut
+                        # pakai kelas yang sudah di-smooth, bukan mentah per-
+                        # frame yang rawan flicker (mis. bus<->truk).
+                        det.class_name = self.state.update_track_position(
+                            det.track_id, det.class_name, det.centroid, now
+                        )
 
                     if now - self._last_cleanup > 10:
                         self.state.cleanup_stale(now)

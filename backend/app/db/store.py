@@ -299,8 +299,14 @@ def _iter_count_rows(since: datetime.datetime, until: Optional[datetime.datetime
                     if not line:
                         continue
                     row = json.loads(line)
-                    jam = datetime.datetime.fromisoformat(row["jam"])
-                    if since <= jam <= until:
+                    # Pakai `waktu` (presisi detik) kalau ada, fallback ke
+                    # `jam` (dibulatkan) utk event lama sblm field ini ada.
+                    # Penting utk granularitas menit di get_timeseries --
+                    # filter by `jam` bisa salah buang event yg persis
+                    # kejadian di awal rentang tapi jam-nya dibulatkan ke
+                    # sebelum `since`.
+                    ts = datetime.datetime.fromisoformat(row.get("waktu") or row["jam"])
+                    if since <= ts <= until:
                         yield row
         day += one_day
 
@@ -462,3 +468,173 @@ def get_alerts(
             if len(results) >= limit:
                 return results
     return results
+
+
+# ==================== Time-series fleksibel (grafik line, halaman Analitik) ====================
+
+_BULAN_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+_GRANULARITY_STEP = {
+    "minute": datetime.timedelta(minutes=1),
+    "hour": datetime.timedelta(hours=1),
+    "day": datetime.timedelta(days=1),
+    "week": datetime.timedelta(weeks=1),
+    # "month" ditangani khusus di _add_months krn panjang bulan gak tetap
+}
+GRANULARITY_DEFAULT_COUNT = {"minute": 60, "hour": 24, "day": 30, "week": 12, "month": 12}
+
+
+def _truncate_to_granularity(dt: datetime.datetime, granularity: str) -> datetime.datetime:
+    if granularity == "minute":
+        return dt.replace(second=0, microsecond=0)
+    if granularity == "hour":
+        return dt.replace(minute=0, second=0, microsecond=0)
+    if granularity == "day":
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    if granularity == "week":
+        d = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        return d - datetime.timedelta(days=d.weekday())  # Senin sbg awal minggu
+    if granularity == "month":
+        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    raise ValueError(f"granularity tidak dikenal: {granularity!r} (harus salah satu dari {list(GRANULARITY_DEFAULT_COUNT)})")
+
+
+def _add_months(dt: datetime.datetime, n: int) -> datetime.datetime:
+    month0 = dt.month - 1 + n
+    year = dt.year + month0 // 12
+    month = month0 % 12 + 1
+    return dt.replace(year=year, month=month)
+
+
+def _step_bucket(dt: datetime.datetime, granularity: str) -> datetime.datetime:
+    return _add_months(dt, 1) if granularity == "month" else dt + _GRANULARITY_STEP[granularity]
+
+
+def _format_bucket_label(dt: datetime.datetime, granularity: str) -> str:
+    if granularity in ("minute", "hour"):
+        return dt.strftime("%H:%M")
+    if granularity in ("day", "week"):
+        return dt.strftime("%d/%m")
+    if granularity == "month":
+        return f"{_BULAN_ID[dt.month - 1]} {dt.year}"
+    return dt.isoformat()
+
+
+def get_timeseries(
+    camera_id: Optional[int] = None,
+    zone_type: Optional[str] = None,
+    granularity: str = "hour",
+    count: Optional[int] = None,
+) -> list[dict]:
+    """Time-series count kendaraan per bucket (menit/jam/hari/minggu/bulan),
+    N bucket terakhir dari sekarang mundur -- dipakai grafik line + tabel di
+    halaman Analitik. Beda dari get_volume (cuma per-jam dlm 1 hari): ini
+    fleksibel granularitasnya dan selalu window "N terakhir dari sekarang",
+    bukan terikat 1 tanggal spesifik."""
+    if granularity not in GRANULARITY_DEFAULT_COUNT:
+        raise ValueError(f"granularity harus salah satu dari {list(GRANULARITY_DEFAULT_COUNT)}")
+    count = count or GRANULARITY_DEFAULT_COUNT[granularity]
+    count = max(1, min(count, 366))  # batas wajar biar gak query kebablasan
+
+    now = datetime.datetime.now()
+    until_bucket = _truncate_to_granularity(now, granularity)
+    since_bucket = until_bucket
+    for _ in range(count - 1):
+        since_bucket = (
+            _add_months(since_bucket, -1) if granularity == "month" else since_bucket - _GRANULARITY_STEP[granularity]
+        )
+
+    zone_map = _zone_type_map() if zone_type else None
+    buckets: dict[str, dict[str, int]] = {}
+    for row in _iter_count_rows(since_bucket, now):
+        if camera_id is not None and row["camera_id"] != camera_id:
+            continue
+        if zone_map is not None and zone_map.get(row.get("zone_id")) != zone_type:
+            continue
+        ts = datetime.datetime.fromisoformat(row.get("waktu") or row["jam"])
+        key = _truncate_to_granularity(ts, granularity).isoformat()
+        bucket = buckets.setdefault(key, {})
+        bucket[row["kelas"]] = bucket.get(row["kelas"], 0) + row["jumlah"]
+
+    # Generate SEMUA bucket dlm rentang (termasuk yg kosong/0) biar sumbu
+    # waktu di grafik line kontinu, bukan cuma bucket yg ada datanya.
+    result = []
+    cursor = since_bucket
+    for _ in range(count):
+        key = cursor.isoformat()
+        entry = {k: buckets.get(key, {}).get(k, 0) for k in KELAS_LIST}
+        entry["waktu"] = key
+        entry["label"] = _format_bucket_label(cursor, granularity)
+        entry["total"] = sum(entry[k] for k in KELAS_LIST)
+        result.append(entry)
+        cursor = _step_bucket(cursor, granularity)
+    return result
+
+
+# ==================== Hapus data (admin -- tabel Data Deteksi) ====================
+
+def _write_jsonl_or_remove(path: Path, kept_lines: list[str]):
+    """Tulis ulang file JSONL dgn baris yang tersisa (atomik), atau hapus
+    filenya sekalian kalau isinya jadi kosong."""
+    with _lock:
+        if not kept_lines:
+            path.unlink(missing_ok=True)
+            return
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(kept_lines) + "\n")
+        tmp.replace(path)
+
+
+def delete_count_events(
+    camera_id: Optional[int] = None,
+    date: Optional[str] = None,
+    zone_type: Optional[str] = None,
+    kelas: Optional[str] = None,
+) -> int:
+    """Hapus event counting yang cocok filter (dipakai tombol hapus di tabel
+    "Data Deteksi"). WAJIB minimal 1 filter diisi -- ini operasi destruktif,
+    jangan sampai bisa kehapus SEMUA data cuma krn lupa isi filter. Return
+    jumlah baris yang dihapus.
+
+    CATATAN penting: `date` kosong DI SINI artinya "hari ini" (konsisten
+    dgn get_count_events/get_summary), BUKAN "sepanjang masa" -- default
+    operasi destruktif harus yang paling sempit/aman, supaya tidak ada
+    kejutan "klik hapus di tabel yg nampilin data hari ini, eh yang
+    kehapus malah data dari tanggal2 lain juga"."""
+    if camera_id is None and date is None and zone_type is None and kelas is None:
+        raise ValueError("Isi minimal 1 filter (tanggal/kamera/kategori) sebelum menghapus data")
+
+    target_date = date or _date_str(datetime.datetime.now())
+    zone_type_map = _zone_type_map() if zone_type else None
+    paths = [COUNTS_DIR / f"{target_date}.jsonl"]
+
+    total_deleted = 0
+    for path in paths:
+        if not path.exists():
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        kept = []
+        deleted_here = 0
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            row = json.loads(stripped)
+            matches = (
+                (camera_id is None or row["camera_id"] == camera_id)
+                and (zone_type is None or zone_type_map.get(row.get("zone_id")) == zone_type)
+                and (kelas is None or row["kelas"] == kelas)
+            )
+            if matches:
+                deleted_here += 1
+            else:
+                kept.append(stripped)
+
+        if deleted_here:
+            _write_jsonl_or_remove(path, kept)
+            total_deleted += deleted_here
+
+    return total_deleted

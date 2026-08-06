@@ -5,7 +5,15 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_cameras, routes_settings, routes_snapshot, routes_stats, routes_ws, routes_zones
+from app.api import (
+    routes_cameras,
+    routes_settings,
+    routes_snapshot,
+    routes_stats,
+    routes_training,
+    routes_ws,
+    routes_zones,
+)
 from app.config import settings
 from app.core import stream_worker
 from app.core.detector import VehicleDetector
@@ -29,6 +37,7 @@ app.include_router(routes_zones.router)
 app.include_router(routes_snapshot.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_settings.router)
+app.include_router(routes_training.router)
 app.include_router(routes_ws.router)
 
 

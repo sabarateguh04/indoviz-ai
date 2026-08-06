@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cameraStatus } from "../lib/cameraStatus.js";
 import { VEHICLE_CLASS_COLORS } from "../lib/vehicleClasses.js";
 
 const ZONE_COLORS = {
@@ -6,12 +7,6 @@ const ZONE_COLORS = {
   no_parking: "#dc2626",
   direction: "#16a34a",
   lane: "#a855f7",
-};
-
-const STATUS_LABEL = {
-  online: { text: "Online", dot: "bg-emerald-400" },
-  warning: { text: "Warning", dot: "bg-amber-400" },
-  offline: { text: "Offline", dot: "bg-red-400" },
 };
 
 function drawZones(ctx, zones) {
@@ -73,7 +68,7 @@ function IconButton({ title, active, onClick, children }) {
   );
 }
 
-export default function CameraCard({ camera, frameData, zones = [], onSelect, onToggleView }) {
+export default function CameraCard({ camera, frameData, zones = [], onSelect, onToggleView, fill = false }) {
   const canvasRef = useRef(null);
   const [showZones, setShowZones] = useState(false);
 
@@ -85,12 +80,14 @@ export default function CameraCard({ camera, frameData, zones = [], onSelect, on
     drawOverlay(canvas, frameData, zones, showZones);
   }, [frameData, zones, showZones]);
 
-  const status = STATUS_LABEL[camera.status] || STATUS_LABEL.offline;
+  const status = cameraStatus(camera.status);
   const viewEnabled = camera.view_enabled !== false;
 
   return (
     <div
-      className="relative bg-slate-900 rounded-xl overflow-hidden shadow border border-slate-200 aspect-video cursor-pointer"
+      className={`relative bg-slate-900 rounded-xl overflow-hidden shadow border border-slate-200 cursor-pointer ${
+        fill ? "w-full h-full" : "aspect-video"
+      }`}
       onClick={() => onSelect?.(camera)}
     >
       {viewEnabled && frameData?.frame_jpeg_b64 ? (
@@ -135,13 +132,29 @@ export default function CameraCard({ camera, frameData, zones = [], onSelect, on
         >
           {showZones ? "◎" : "◇"}
         </IconButton>
-        <IconButton
-          title={viewEnabled ? "Matikan live view (hemat bandwidth)" : "Nyalakan live view"}
-          active={!viewEnabled}
-          onClick={() => onToggleView?.(camera)}
-        >
-          {viewEnabled ? "❚❚" : "▶"}
-        </IconButton>
+        {fill ? (
+          <button
+            title="Counting & analitik tetap berjalan di background walau live view dimatikan"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleView?.(camera);
+            }}
+            className={`h-7 flex items-center gap-1.5 px-2.5 rounded text-xs font-medium ${
+              !viewEnabled ? "bg-brand-600 text-white" : "bg-black/60 text-white hover:bg-black/80"
+            }`}
+          >
+            <span>{viewEnabled ? "❚❚" : "▶"}</span>
+            {viewEnabled ? "Matikan live view" : "Nyalakan live view"}
+          </button>
+        ) : (
+          <IconButton
+            title={viewEnabled ? "Matikan live view (hemat bandwidth)" : "Nyalakan live view"}
+            active={!viewEnabled}
+            onClick={() => onToggleView?.(camera)}
+          >
+            {viewEnabled ? "❚❚" : "▶"}
+          </IconButton>
+        )}
       </div>
 
       <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-xs px-2 py-1 flex items-center justify-between">

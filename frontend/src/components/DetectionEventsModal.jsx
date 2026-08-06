@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getStatsEvents } from "../services/api.js";
+import { deleteStatsEvents, getStatsEvents } from "../services/api.js";
 import { VEHICLE_CLASSES, VEHICLE_CLASS_COLORS, VEHICLE_CLASS_LABELS } from "../lib/vehicleClasses.js";
 
 const PAGE_SIZE = 25;
@@ -21,7 +21,7 @@ function formatWaktu(iso) {
 /** Tabel mentah tiap event deteksi/counting (1 baris = 1 kendaraan lolos
  * zona) -- beda dari StatsSidebar/VolumeChart yang sudah teragregasi.
  * Ikut filter kamera/tanggal/tipe-zona global (App.jsx), + filter kelas
- * lokal khusus tabel ini. */
+ * lokal khusus tabel ini. Juga punya tombol hapus data sesuai filter aktif. */
 export default function DetectionEventsModal({ cameraId, date, zoneType, cameraNameById = {}, onClose }) {
   const [kelasFilter, setKelasFilter] = useState("");
   const [offset, setOffset] = useState(0);
@@ -29,6 +29,8 @@ export default function DetectionEventsModal({ cameraId, date, zoneType, cameraN
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => setOffset(0), [cameraId, date, zoneType, kelasFilter]);
 
@@ -65,10 +67,36 @@ export default function DetectionEventsModal({ cameraId, date, zoneType, cameraN
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [cameraId, date, zoneType, kelasFilter, offset]);
+  }, [cameraId, date, zoneType, kelasFilter, offset, refreshTick]);
 
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const filterDesc = [
+    date ? `tanggal ${date}` : "hari ini",
+    cameraId ? `kamera "${cameraNameById[cameraId] || `#${cameraId}`}"` : "semua kamera",
+    zoneType ? `tipe zona "${ZONE_TIPE_LABEL[zoneType] || zoneType}"` : "semua tipe zona",
+    kelasFilter ? `kelas "${VEHICLE_CLASS_LABELS[kelasFilter]}"` : "semua kelas",
+  ].join(", ");
+
+  async function handleDelete() {
+    if (total === 0) return;
+    const ok = window.confirm(
+      `Hapus ${total} event deteksi (${filterDesc})?\n\nTindakan ini TIDAK BISA DIBATALKAN.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteStatsEvents(cameraId, { date, zoneType, kelas: kelasFilter || undefined });
+      setOffset(0);
+      setRefreshTick((t) => t + 1);
+    } catch (err) {
+      setError(err.message || "Gagal menghapus data");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
@@ -85,7 +113,7 @@ export default function DetectionEventsModal({ cameraId, date, zoneType, cameraN
           </button>
         </div>
 
-        <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 shrink-0">
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 shrink-0 flex-wrap">
           <label className="text-xs font-semibold text-slate-500">Kelas</label>
           <select
             value={kelasFilter}
@@ -99,7 +127,16 @@ export default function DetectionEventsModal({ cameraId, date, zoneType, cameraN
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-400 ml-auto">{total} event</span>
+          <span className="text-xs text-slate-400">{total} event</span>
+
+          <button
+            onClick={handleDelete}
+            disabled={deleting || total === 0}
+            title={`Hapus semua data sesuai filter saat ini: ${filterDesc}`}
+            className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {deleting ? "Menghapus…" : "🗑 Hapus data sesuai filter"}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto transition-opacity" style={{ opacity: loading ? 0.6 : 1 }}>

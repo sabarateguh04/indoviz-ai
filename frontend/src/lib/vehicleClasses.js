@@ -9,11 +9,11 @@
  * bucket fallback (lihat core/tracker.py backend).
  */
 export const VEHICLE_CLASSES = [
-  { key: "motor", label: "Motor", color: "#2a78d6" },
-  { key: "mobil", label: "Mobil", color: "#eb6834" },
-  { key: "bus", label: "Bus", color: "#1baf7a" },
-  { key: "truk", label: "Truk", color: "#eda100" },
-  { key: "tidak_diketahui", label: "Tidak Diketahui", color: "#94a3b8" },
+  { key: "motor", label: "Motor", color: "#2a78d6", icon: "🏍️" },
+  { key: "mobil", label: "Mobil", color: "#eb6834", icon: "🚗" },
+  { key: "bus", label: "Bus", color: "#1baf7a", icon: "🚌" },
+  { key: "truk", label: "Truk", color: "#eda100", icon: "🚚" },
+  { key: "tidak_diketahui", label: "Tidak Diketahui", color: "#94a3b8", icon: "❓" },
 ];
 
 export const VEHICLE_CLASS_COLORS = Object.fromEntries(VEHICLE_CLASSES.map((c) => [c.key, c.color]));

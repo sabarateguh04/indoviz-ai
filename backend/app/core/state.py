@@ -6,7 +6,7 @@ state sendiri-sendiri (tracker & deteksi yang dipakai tetap satu, sesuai
 instruksi build: jangan bikin model AI terpisah per fitur).
 """
 import time
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 HISTORY_LEN = 30
 STALE_AFTER_SECONDS = 30
@@ -16,7 +16,8 @@ class CameraState:
     def __init__(self):
         # track_id -> deque[(timestamp, (x, y))], posisi centroid terbaru
         self.track_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=HISTORY_LEN))
-        self.track_class: dict[int, str] = {}
+        self.track_class: dict[int, str] = {}  # kelas STABIL (hasil voting) per track_id -- lihat update_track_position
+        self.track_class_votes: dict[int, Counter] = defaultdict(Counter)
 
         # counting.py — zone_id -> set(track_id) yang sudah terhitung
         self.counted_in_zone: dict[int, set] = defaultdict(set)
@@ -38,10 +39,25 @@ class CameraState:
 
         self._last_seen: dict[int, float] = {}
 
-    def update_track_position(self, track_id: int, class_name: str, centroid: tuple, timestamp: float):
+    def update_track_position(self, track_id: int, class_name: str, centroid: tuple, timestamp: float) -> str:
+        """Catat posisi terbaru track ini + vote kelasnya, kembalikan kelas
+        STABIL (mayoritas) buat dipakai caller (bukan `class_name` mentah).
+
+        Kenapa voting: YOLO kadang "flicker" antar kelas yang bentuknya mirip
+        (bus <-> truk terutama) dari frame ke frame utk objek fisik yang
+        sama -- 1 frame salah tebak cukup buat bikin event counting kecatat
+        dgn kelas yang salah kalau dipakai apa adanya. Dengan voting, kelas
+        yang dipakai adalah yang paling sering muncul sepanjang histori track
+        itu, jadi 1-2 frame outlier tidak mengubah kelas yang sudah dominan.
+        """
         self.track_history[track_id].append((timestamp, centroid))
-        self.track_class[track_id] = class_name
         self._last_seen[track_id] = timestamp
+
+        votes = self.track_class_votes[track_id]
+        votes[class_name] += 1
+        stable_class = votes.most_common(1)[0][0]
+        self.track_class[track_id] = stable_class
+        return stable_class
 
     def cleanup_stale(self, now: float | None = None):
         """Buang state track yang sudah tidak terlihat > STALE_AFTER_SECONDS
@@ -51,6 +67,7 @@ class CameraState:
         for tid in stale_ids:
             self.track_history.pop(tid, None)
             self.track_class.pop(tid, None)
+            self.track_class_votes.pop(tid, None)
             self.stationary_since.pop(tid, None)
             self.stationary_anchor.pop(tid, None)
             self.illegal_parking_alerted.discard(tid)

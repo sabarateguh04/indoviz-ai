@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import AlertPanel from "./components/AlertPanel.jsx";
-import CameraGrid from "./components/CameraGrid.jsx";
+import AnalyticsPage from "./components/AnalyticsPage.jsx";
 import CameraManager from "./components/CameraManager.jsx";
+import DatasetPage from "./components/DatasetPage.jsx";
 import DetectionEventsModal from "./components/DetectionEventsModal.jsx";
-import FilterBar from "./components/FilterBar.jsx";
-import StatsSidebar from "./components/StatsSidebar.jsx";
+import HomePage from "./components/HomePage.jsx";
 import TopBar from "./components/TopBar.jsx";
-import VolumeChart from "./components/VolumeChart.jsx";
 import ZoneEditor from "./components/ZoneEditor.jsx";
 import useCameraSocket from "./hooks/useCameraSocket.js";
 import { getCameras, getZones, setCameraViewEnabled } from "./services/api.js";
@@ -15,6 +13,7 @@ const CAMERA_POLL_MS = 5000;
 const ZONES_POLL_MS = 10000;
 
 export default function App() {
+  const [page, setPage] = useState("utama"); // "utama" | "analitik"
   const [cameras, setCameras] = useState([]);
   const [zonesByCamera, setZonesByCamera] = useState({});
   const [view, setView] = useState("2x2");
@@ -86,47 +85,41 @@ export default function App() {
     <div className="h-screen flex flex-col">
       <TopBar
         connected={connected}
+        page={page}
+        onChangePage={setPage}
         view={view}
         onChangeView={setView}
         onOpenManager={() => setManagerOpen(true)}
         onOpenEvents={() => setEventsOpen(true)}
       />
 
-      <div className="flex-1 flex gap-3 p-3 overflow-hidden">
-        <div className="flex-1 min-w-0">
-          <CameraGrid
-            cameras={cameras}
-            framesByCamera={framesByCamera}
-            zonesByCamera={zonesByCamera}
-            view={view}
-            onSelectCamera={setZoningCamera}
-            onToggleView={handleToggleView}
-          />
-        </div>
+      {page === "utama" && (
+        <HomePage
+          cameras={cameras}
+          framesByCamera={framesByCamera}
+          zonesByCamera={zonesByCamera}
+          view={view}
+          onSelectCamera={setZoningCamera}
+          onToggleView={handleToggleView}
+        />
+      )}
 
-        <div className="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
-          <FilterBar
-            cameras={cameras}
-            cameraId={statsCameraId}
-            onChangeCamera={setStatsCameraId}
-            date={statsDate}
-            onChangeDate={setStatsDate}
-            zoneType={statsZoneType}
-            onChangeZoneType={setStatsZoneType}
-          />
+      {page === "analitik" && (
+        <AnalyticsPage
+          cameras={cameras}
+          statsCameraId={statsCameraId}
+          onChangeCamera={setStatsCameraId}
+          statsDate={statsDate}
+          onChangeDate={setStatsDate}
+          statsZoneType={statsZoneType}
+          onChangeZoneType={setStatsZoneType}
+          alerts={alerts}
+          zoneTypeById={zoneTypeById}
+          cameraNameById={cameraNameById}
+        />
+      )}
 
-          <StatsSidebar cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
-          <VolumeChart cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
-          <AlertPanel
-            liveAlerts={alerts}
-            cameraId={statsCameraId}
-            date={statsDate}
-            zoneType={statsZoneType}
-            zoneTypeById={zoneTypeById}
-            cameraNameById={cameraNameById}
-          />
-        </div>
-      </div>
+      {page === "dataset" && <DatasetPage cameraNameById={cameraNameById} />}
 
       {managerOpen && (
         <CameraManager cameras={cameras} onClose={() => setManagerOpen(false)} onChanged={refreshCameras} />
