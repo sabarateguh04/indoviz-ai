@@ -60,8 +60,14 @@ class Settings:
     # Direktori snapshot sementara (dipakai background editor poligon)
     SNAPSHOT_DIR: Path = BASE_DIR / "app" / "snapshots"
 
-    # Interval broadcast websocket (detik) supaya tidak membanjiri client
-    WS_BROADCAST_INTERVAL: float = float(os.getenv("WS_BROADCAST_INTERVAL", "0.2"))
+    # Interval broadcast websocket (detik) supaya tidak membanjiri client --
+    # ini cuma DEFAULT/fallback; nilai yang beneran kepakai bisa di-override
+    # runtime lewat UI (dropdown "Live" di top bar -> disimpan di
+    # app/data/settings.json key ws_broadcast_interval, lihat
+    # routes_settings.py & core/stream_worker.py).
+    WS_BROADCAST_INTERVAL: float = float(os.getenv("WS_BROADCAST_INTERVAL", "0.1"))
+    WS_BROADCAST_INTERVAL_MIN: float = 0.05  # 20 fps -- batas atas biar gak membanjiri banyak kamera sekaligus
+    WS_BROADCAST_INTERVAL_MAX: float = 1.0  # 1 fps -- batas bawah biar live view masih kepakai
 
     # Parkir liar: threshold gerak (piksel, dinormalisasi ke diagonal frame)
     # dan durasi diam minimal (detik) sebelum dianggap parkir liar.

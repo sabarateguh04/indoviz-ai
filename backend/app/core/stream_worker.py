@@ -76,6 +76,7 @@ class StreamWorker(threading.Thread):
         self._last_zone_refresh = 0.0
         self._last_cleanup = 0.0
         self._frame_times: deque = deque(maxlen=30)
+        self._broadcast_interval = settings.WS_BROADCAST_INTERVAL
 
     def stop(self):
         self._stop_event.set()
@@ -145,6 +146,12 @@ class StreamWorker(threading.Thread):
                         break  # kamera sudah dihapus dari UI
                     if not camera.active:
                         break  # kamera dinonaktifkan dari UI
+                    # Baca ulang interval broadcast tiap tick ini juga --
+                    # biar ganti setting "Live" di UI kepakai tanpa restart
+                    # backend, mirip pola view_enabled di bawah.
+                    self._broadcast_interval = (
+                        store.get_app_settings().get("ws_broadcast_interval") or settings.WS_BROADCAST_INTERVAL
+                    )
 
                 try:
                     result = detector.track(frame, imgsz=imgsz)
@@ -167,7 +174,7 @@ class StreamWorker(threading.Thread):
                     if count_events or wrong_way_events or parking_events or lane_events:
                         self._persist_events(count_events, wrong_way_events, parking_events, lane_events)
 
-                    if now - last_broadcast >= settings.WS_BROADCAST_INTERVAL:
+                    if now - last_broadcast >= self._broadcast_interval:
                         last_broadcast = now
                         fps = 0.0
                         if len(self._frame_times) > 1:

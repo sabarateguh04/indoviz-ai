@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import DisplaySettings from "./DisplaySettings.jsx";
 import ModelSelector from "./ModelSelector.jsx";
 
 export default function TopBar({ connected, view, onChangeView, onOpenManager }) {
@@ -34,6 +35,7 @@ export default function TopBar({ connected, view, onChangeView, onOpenManager })
         </div>
 
         <ModelSelector />
+        <DisplaySettings />
 
         <button
           onClick={onOpenManager}

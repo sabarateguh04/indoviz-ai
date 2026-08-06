@@ -21,6 +21,10 @@ class ModelUpdate(BaseModel):
     model_name: str
 
 
+class DisplayUpdate(BaseModel):
+    ws_broadcast_interval: float
+
+
 def _available_models() -> list[str]:
     """Model .pt yang benar-benar ada di MODELS_DIR — bukan cuma daftar
     hardcode di config — supaya dropdown di frontend tidak menawarkan model
@@ -57,3 +61,33 @@ def set_model(payload: ModelUpdate):
 
     store.update_app_settings({"model_name": payload.model_name})
     return {"current": payload.model_name, "available": available}
+
+
+@router.get("/display")
+def get_display_settings():
+    """Interval broadcast frame ke frontend (detik) -- makin kecil makin
+    smooth live view-nya, tapi makin besar juga bandwidth/CPU per kamera.
+    Ini KOSMETIK doang (kecepatan tampilan), TIDAK mempengaruhi kecepatan
+    deteksi/counting -- itu jalan di frame rate penuh terlepas dari nilai
+    ini, lihat core/stream_worker.py."""
+    interval = store.get_app_settings().get("ws_broadcast_interval") or settings.WS_BROADCAST_INTERVAL
+    return {
+        "ws_broadcast_interval": interval,
+        "min": settings.WS_BROADCAST_INTERVAL_MIN,
+        "max": settings.WS_BROADCAST_INTERVAL_MAX,
+    }
+
+
+@router.put("/display")
+def set_display_settings(payload: DisplayUpdate):
+    if not (settings.WS_BROADCAST_INTERVAL_MIN <= payload.ws_broadcast_interval <= settings.WS_BROADCAST_INTERVAL_MAX):
+        raise HTTPException(
+            status_code=400,
+            detail=f"ws_broadcast_interval harus antara {settings.WS_BROADCAST_INTERVAL_MIN} "
+                   f"dan {settings.WS_BROADCAST_INTERVAL_MAX} detik",
+        )
+    store.update_app_settings({"ws_broadcast_interval": payload.ws_broadcast_interval})
+    # Semua StreamWorker baca ulang nilai ini tiap ZONE_REFRESH_INTERVAL
+    # (5 detik) -- lihat core/stream_worker.py -- jadi berlaku tanpa restart,
+    # cuma butuh beberapa detik.
+    return {"ws_broadcast_interval": payload.ws_broadcast_interval}

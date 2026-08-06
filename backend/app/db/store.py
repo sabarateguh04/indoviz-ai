@@ -38,7 +38,7 @@ ALERTS_DIR = DATA_DIR / "alerts"
 KELAS_LIST = ["motor", "mobil", "bus", "truk", "tidak_diketahui"]
 
 _EMPTY = {"next_id": 1, "items": []}
-_DEFAULT_SETTINGS = {"model_name": None}
+_DEFAULT_SETTINGS = {"model_name": None, "ws_broadcast_interval": None}
 
 
 def init_store():

@@ -78,3 +78,11 @@ export const getAlerts = (cameraId, limit = 50, filters = {}) => {
 export const getModelSettings = () => request("/settings/model");
 export const setModelSettings = (modelName) =>
   request("/settings/model", { method: "PUT", body: JSON.stringify({ model_name: modelName }) });
+
+// ---- Pengaturan (kecepatan live view) ----
+export const getDisplaySettings = () => request("/settings/display");
+export const setDisplaySettings = (wsBroadcastInterval) =>
+  request("/settings/display", {
+    method: "PUT",
+    body: JSON.stringify({ ws_broadcast_interval: wsBroadcastInterval }),
+  });
