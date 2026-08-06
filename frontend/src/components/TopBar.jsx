@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ModelSelector from "./ModelSelector.jsx";
 
 export default function TopBar({ connected, view, onChangeView, onOpenManager }) {
   const [now, setNow] = useState(new Date());
@@ -31,6 +32,8 @@ export default function TopBar({ connected, view, onChangeView, onOpenManager })
             </button>
           ))}
         </div>
+
+        <ModelSelector />
 
         <button
           onClick={onOpenManager}

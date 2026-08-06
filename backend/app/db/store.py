@@ -31,12 +31,14 @@ _lock = threading.RLock()
 DATA_DIR = settings.DATA_DIR
 CAMERAS_FILE = DATA_DIR / "cameras.json"
 ZONES_FILE = DATA_DIR / "zones.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 COUNTS_DIR = DATA_DIR / "counts"
 ALERTS_DIR = DATA_DIR / "alerts"
 
 KELAS_LIST = ["motor", "mobil", "bus", "truk"]
 
 _EMPTY = {"next_id": 1, "items": []}
+_DEFAULT_SETTINGS = {"model_name": None}
 
 
 def init_store():
@@ -47,6 +49,8 @@ def init_store():
         _write_json(CAMERAS_FILE, dict(_EMPTY))
     if not ZONES_FILE.exists():
         _write_json(ZONES_FILE, dict(_EMPTY))
+    if not SETTINGS_FILE.exists():
+        _write_json(SETTINGS_FILE, dict(_DEFAULT_SETTINGS))
 
 
 def _read_json(path: Path, default: dict) -> dict:
@@ -145,6 +149,22 @@ def delete_camera(camera_id: int) -> bool:
     return True
 
 
+# ==================== Pengaturan aplikasi (mis. model YOLO aktif) ====================
+
+def get_app_settings() -> dict:
+    with _lock:
+        data = _read_json(SETTINGS_FILE, _DEFAULT_SETTINGS)
+    return {**_DEFAULT_SETTINGS, **data}
+
+
+def update_app_settings(changes: dict) -> dict:
+    with _lock:
+        data = _read_json(SETTINGS_FILE, _DEFAULT_SETTINGS)
+        data.update(changes)
+        _write_json(SETTINGS_FILE, data)
+        return {**_DEFAULT_SETTINGS, **data}
+
+
 # ==================== Zona ====================
 
 def list_zones(camera_id: Optional[int] = None) -> list[Zone]:
@@ -202,6 +222,12 @@ def delete_zone(zone_id: int) -> bool:
     return True
 
 
+def _zone_type_map() -> dict[int, str]:
+    """zone_id -> tipe_zona, dipakai untuk filter stats/alerts per tipe zona
+    (event counting/alert cuma nyimpen zone_id, bukan tipe_zona-nya)."""
+    return {z.id: z.tipe_zona for z in list_zones()}
+
+
 # ==================== Counting (per tanggal, JSONL append-only) ====================
 
 def _date_str(dt: datetime.datetime) -> str:
@@ -232,6 +258,13 @@ def append_count_events(camera_id: int, events: list, when: Optional[datetime.da
     _append_lines(path, lines)
 
 
+def _day_range(date_str: str) -> tuple[datetime.datetime, datetime.datetime]:
+    """Parse 'YYYY-MM-DD' jadi rentang [00:00:00, 23:59:59.999999] hari itu."""
+    day_start = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    day_end = day_start + datetime.timedelta(days=1) - datetime.timedelta(microseconds=1)
+    return day_start, day_end
+
+
 def _iter_count_rows(since: datetime.datetime, until: Optional[datetime.datetime] = None):
     until = until or datetime.datetime.utcnow()
     day = since.date()
@@ -252,11 +285,19 @@ def _iter_count_rows(since: datetime.datetime, until: Optional[datetime.datetime
         day += one_day
 
 
-def get_summary(camera_id: Optional[int] = None) -> dict:
-    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+def get_summary(camera_id: Optional[int] = None, date: Optional[str] = None, zone_type: Optional[str] = None) -> dict:
+    if date:
+        since, until = _day_range(date)
+    else:
+        since = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        until = None
+
+    zone_map = _zone_type_map() if zone_type else None
     totals = {k: 0 for k in KELAS_LIST}
-    for row in _iter_count_rows(today_start):
+    for row in _iter_count_rows(since, until):
         if camera_id is not None and row["camera_id"] != camera_id:
+            continue
+        if zone_map is not None and zone_map.get(row.get("zone_id")) != zone_type:
             continue
         if row["kelas"] in totals:
             totals[row["kelas"]] += row["jumlah"]
@@ -264,11 +305,24 @@ def get_summary(camera_id: Optional[int] = None) -> dict:
     return totals
 
 
-def get_volume(camera_id: Optional[int] = None, hours: int = 24) -> list[dict]:
-    since = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+def get_volume(
+    camera_id: Optional[int] = None,
+    hours: int = 24,
+    date: Optional[str] = None,
+    zone_type: Optional[str] = None,
+) -> list[dict]:
+    if date:
+        since, until = _day_range(date)
+    else:
+        since = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+        until = None
+
+    zone_map = _zone_type_map() if zone_type else None
     buckets: dict[str, dict[str, int]] = {}
-    for row in _iter_count_rows(since):
+    for row in _iter_count_rows(since, until):
         if camera_id is not None and row["camera_id"] != camera_id:
+            continue
+        if zone_map is not None and zone_map.get(row.get("zone_id")) != zone_type:
             continue
         bucket = buckets.setdefault(row["jam"], {})
         bucket[row["kelas"]] = bucket.get(row["kelas"], 0) + row["jumlah"]
@@ -308,9 +362,23 @@ def append_alerts(camera_id: int, alerts: list[dict], when: Optional[datetime.da
     _append_lines(path, lines)
 
 
-def get_alerts(camera_id: Optional[int] = None, limit: int = 50) -> list[dict]:
+def get_alerts(
+    camera_id: Optional[int] = None,
+    limit: int = 50,
+    date: Optional[str] = None,
+    zone_type: Optional[str] = None,
+) -> list[dict]:
+    zone_map = _zone_type_map() if zone_type else None
+    if date:
+        # Tanggal spesifik -> baca cuma 1 file, urutan tetap terbaru dulu.
+        paths = [ALERTS_DIR / f"{date}.jsonl"]
+    else:
+        paths = sorted(ALERTS_DIR.glob("*.jsonl"), reverse=True)
+
     results = []
-    for path in sorted(ALERTS_DIR.glob("*.jsonl"), reverse=True):
+    for path in paths:
+        if not path.exists():
+            continue
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         for line in reversed(lines):
@@ -319,6 +387,8 @@ def get_alerts(camera_id: Optional[int] = None, limit: int = 50) -> list[dict]:
                 continue
             row = json.loads(line)
             if camera_id is not None and row["camera_id"] != camera_id:
+                continue
+            if zone_map is not None and zone_map.get(row.get("zone_id")) != zone_type:
                 continue
             results.append(row)
             if len(results) >= limit:

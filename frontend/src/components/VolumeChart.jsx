@@ -20,7 +20,7 @@ const SERIES = [
   { key: "truk", color: "#dc2626", label: "Truk" },
 ];
 
-export default function VolumeChart({ cameraId }) {
+export default function VolumeChart({ cameraId, date, zoneType }) {
   const [data, setData] = useState([]);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function VolumeChart({ cameraId }) {
 
     async function load() {
       try {
-        const rows = await getStatsVolume(cameraId, 24);
+        const rows = await getStatsVolume(cameraId, 24, { date, zoneType });
         if (!cancelled) setData(rows);
       } catch {
         // biarkan data lama tampil kalau request gagal sementara
@@ -41,11 +41,13 @@ export default function VolumeChart({ cameraId }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [cameraId]);
+  }, [cameraId, date, zoneType]);
 
   return (
     <div className="bg-white rounded-xl shadow border border-slate-200 p-4">
-      <h3 className="text-sm font-semibold text-slate-500 mb-3">Volume Kendaraan per Jam</h3>
+      <h3 className="text-sm font-semibold text-slate-500 mb-3">
+        Volume Kendaraan per Jam{date ? ` — ${date}` : ""}
+      </h3>
       <div className="h-64">
         {data.length === 0 ? (
           <div className="h-full flex items-center justify-center text-slate-400 text-sm">

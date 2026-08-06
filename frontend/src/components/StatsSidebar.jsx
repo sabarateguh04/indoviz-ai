@@ -4,7 +4,7 @@ import { getStatsSummary } from "../services/api.js";
 const KELAS_LABEL = { motor: "Motor", mobil: "Mobil", bus: "Bus", truk: "Truk" };
 const REFRESH_MS = 10000;
 
-export default function StatsSidebar({ cameraId }) {
+export default function StatsSidebar({ cameraId, date, zoneType }) {
   const [summary, setSummary] = useState({ motor: 0, mobil: 0, bus: 0, truk: 0, total: 0 });
 
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function StatsSidebar({ cameraId }) {
 
     async function load() {
       try {
-        const data = await getStatsSummary(cameraId);
+        const data = await getStatsSummary(cameraId, { date, zoneType });
         if (!cancelled) setSummary(data);
       } catch {
         // biarkan nilai lama tampil kalau request gagal sementara
@@ -25,11 +25,11 @@ export default function StatsSidebar({ cameraId }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [cameraId]);
+  }, [cameraId, date, zoneType]);
 
   return (
     <div className="bg-white rounded-xl shadow border border-slate-200 p-4">
-      <h3 className="text-sm font-semibold text-slate-500 mb-3">Total Hari Ini</h3>
+      <h3 className="text-sm font-semibold text-slate-500 mb-3">{date ? `Total Tanggal ${date}` : "Total Hari Ini"}</h3>
       <div className="grid grid-cols-2 gap-3">
         {Object.entries(KELAS_LABEL).map(([key, label]) => (
           <div key={key} className="bg-brand-50 rounded-lg p-3 text-center">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AlertPanel from "./components/AlertPanel.jsx";
 import CameraGrid from "./components/CameraGrid.jsx";
 import CameraManager from "./components/CameraManager.jsx";
+import FilterBar from "./components/FilterBar.jsx";
 import StatsSidebar from "./components/StatsSidebar.jsx";
 import TopBar from "./components/TopBar.jsx";
 import VolumeChart from "./components/VolumeChart.jsx";
@@ -19,6 +20,8 @@ export default function App() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [zoningCamera, setZoningCamera] = useState(null);
   const [statsCameraId, setStatsCameraId] = useState(null); // null = semua kamera
+  const [statsDate, setStatsDate] = useState(null); // null = live/hari ini
+  const [statsZoneType, setStatsZoneType] = useState(null); // null = semua tipe zona
 
   const { framesByCamera, alerts, connected } = useCameraSocket();
 
@@ -71,6 +74,11 @@ export default function App() {
   }
 
   const cameraNameById = Object.fromEntries(cameras.map((c) => [c.id, c.nama]));
+  const zoneTypeById = Object.fromEntries(
+    Object.values(zonesByCamera)
+      .flat()
+      .map((z) => [z.id, z.tipe_zona])
+  );
 
   return (
     <div className="h-screen flex flex-col">
@@ -94,25 +102,26 @@ export default function App() {
         </div>
 
         <div className="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow border border-slate-200 p-3">
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Tampilkan Statistik Untuk</label>
-            <select
-              value={statsCameraId ?? ""}
-              onChange={(e) => setStatsCameraId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-            >
-              <option value="">Semua Kamera</option>
-              {cameras.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nama}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FilterBar
+            cameras={cameras}
+            cameraId={statsCameraId}
+            onChangeCamera={setStatsCameraId}
+            date={statsDate}
+            onChangeDate={setStatsDate}
+            zoneType={statsZoneType}
+            onChangeZoneType={setStatsZoneType}
+          />
 
-          <StatsSidebar cameraId={statsCameraId} />
-          <VolumeChart cameraId={statsCameraId} />
-          <AlertPanel liveAlerts={alerts} cameraId={statsCameraId} cameraNameById={cameraNameById} />
+          <StatsSidebar cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
+          <VolumeChart cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
+          <AlertPanel
+            liveAlerts={alerts}
+            cameraId={statsCameraId}
+            date={statsDate}
+            zoneType={statsZoneType}
+            zoneTypeById={zoneTypeById}
+            cameraNameById={cameraNameById}
+          />
         </div>
       </div>
 

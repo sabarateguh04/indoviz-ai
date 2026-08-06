@@ -45,13 +45,36 @@ export const getSnapshotUrl = (cameraId) =>
   `${BASE_URL}/snapshot/${cameraId}?t=${Date.now()}`;
 
 // ---- Statistik ----
-export const getStatsSummary = (cameraId) =>
-  request(cameraId ? `/stats/summary?camera_id=${cameraId}` : "/stats/summary");
-export const getStatsVolume = (cameraId, hours = 24) =>
-  request(
-    `/stats/volume?hours=${hours}${cameraId ? `&camera_id=${cameraId}` : ""}`
-  );
-export const getAlerts = (cameraId, limit = 50) =>
-  request(
-    `/stats/alerts?limit=${limit}${cameraId ? `&camera_id=${cameraId}` : ""}`
-  );
+// `filters` opsional: { date: "YYYY-MM-DD", zoneType: "counting" | "no_parking" | "direction" | "lane" }
+function filterParams({ date, zoneType } = {}) {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (zoneType) params.set("zone_type", zoneType);
+  return params.toString();
+}
+
+export const getStatsSummary = (cameraId, filters = {}) => {
+  const params = new URLSearchParams(filterParams(filters));
+  if (cameraId) params.set("camera_id", cameraId);
+  const qs = params.toString();
+  return request(`/stats/summary${qs ? `?${qs}` : ""}`);
+};
+
+export const getStatsVolume = (cameraId, hours = 24, filters = {}) => {
+  const params = new URLSearchParams(filterParams(filters));
+  params.set("hours", hours);
+  if (cameraId) params.set("camera_id", cameraId);
+  return request(`/stats/volume?${params.toString()}`);
+};
+
+export const getAlerts = (cameraId, limit = 50, filters = {}) => {
+  const params = new URLSearchParams(filterParams(filters));
+  params.set("limit", limit);
+  if (cameraId) params.set("camera_id", cameraId);
+  return request(`/stats/alerts?${params.toString()}`);
+};
+
+// ---- Pengaturan (model YOLO) ----
+export const getModelSettings = () => request("/settings/model");
+export const setModelSettings = (modelName) =>
+  request("/settings/model", { method: "PUT", body: JSON.stringify({ model_name: modelName }) });

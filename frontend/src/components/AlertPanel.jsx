@@ -7,12 +7,12 @@ const TIPE_META = {
   lane_violation: { label: "Pelanggaran Jalur", color: "bg-purple-100 text-purple-700", icon: "🚧" },
 };
 
-export default function AlertPanel({ liveAlerts = [], cameraId, cameraNameById = {} }) {
+export default function AlertPanel({ liveAlerts = [], cameraId, date, zoneType, zoneTypeById = {}, cameraNameById = {} }) {
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
-    getAlerts(cameraId, 30)
+    getAlerts(cameraId, 30, { date, zoneType })
       .then((rows) => {
         if (!cancelled) setHistory(rows.map((h) => ({ ...h, id: `hist-${h.id}` })));
       })
@@ -20,9 +20,17 @@ export default function AlertPanel({ liveAlerts = [], cameraId, cameraNameById =
     return () => {
       cancelled = true;
     };
-  }, [cameraId]);
+  }, [cameraId, date, zoneType]);
 
-  const live = liveAlerts.filter((a) => !cameraId || a.camera_id === cameraId);
+  // Alert live cuma relevan untuk tampilan "sekarang" — kalau user memfilter
+  // tanggal tertentu (termasuk hari lain), jangan dicampur, cukup histori.
+  const live = date
+    ? []
+    : liveAlerts.filter(
+        (a) =>
+          (!cameraId || a.camera_id === cameraId) &&
+          (!zoneType || zoneTypeById[a.zone_id] === zoneType)
+      );
   const seen = new Set();
   const list = [];
   for (const a of [...live, ...history]) {
@@ -34,7 +42,7 @@ export default function AlertPanel({ liveAlerts = [], cameraId, cameraNameById =
 
   return (
     <div className="bg-white rounded-xl shadow border border-slate-200 p-4 flex flex-col">
-      <h3 className="text-sm font-semibold text-slate-500 mb-3">Alert Terbaru</h3>
+      <h3 className="text-sm font-semibold text-slate-500 mb-3">Alert Terbaru{date ? ` — ${date}` : ""}</h3>
       <div className="flex-1 overflow-y-auto space-y-2 max-h-80">
         {list.length === 0 && (
           <div className="text-slate-400 text-sm text-center py-6">Belum ada alert</div>
