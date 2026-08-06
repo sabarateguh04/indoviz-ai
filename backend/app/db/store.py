@@ -95,6 +95,7 @@ def create_camera(payload: dict) -> Camera:
             rtsp_url=payload["rtsp_url"],
             status="offline",
             active=payload.get("active", True),
+            view_enabled=payload.get("view_enabled", True),
             imgsz=payload.get("imgsz"),
             speed_calibration=payload.get("speed_calibration"),
         )

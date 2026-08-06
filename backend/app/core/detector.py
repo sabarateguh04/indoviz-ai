@@ -24,16 +24,29 @@ class VehicleDetector:
     _instance_lock = threading.Lock()
 
     def __init__(self, model_path: str | None = None):
-        self.model = YOLO(model_path or settings.MODEL_PATH)
+        self.model_path = model_path or settings.MODEL_PATH
+        self.model = YOLO(self.model_path)
         self.infer_lock = threading.Lock()
 
     @classmethod
-    def get_shared(cls) -> "VehicleDetector":
+    def get_shared(cls, model_path: str | None = None) -> "VehicleDetector":
+        """`model_path` cuma dipakai saat instance pertama kali dibuat
+        (biasanya dipanggil sekali di startup dengan model pilihan user yang
+        tersimpan). Panggilan berikutnya tanpa argumen akan mengembalikan
+        instance yang sama."""
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
-                    cls._instance = cls()
+                    cls._instance = cls(model_path)
         return cls._instance
+
+    def reload(self, model_path: str):
+        """Ganti model aktif tanpa restart backend. Karena semua kamera pakai
+        instance shared yang sama, ganti di sini otomatis berlaku ke semua
+        stream pada frame berikutnya."""
+        with self.infer_lock:
+            self.model = YOLO(model_path)
+            self.model_path = model_path
 
     def track(self, frame, imgsz: int | None = None, persist: bool = True):
         """Jalankan deteksi + tracking (ByteTrack bawaan ultralytics) pada

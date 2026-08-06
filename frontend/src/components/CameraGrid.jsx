@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import CameraCard from "./CameraCard.jsx";
 
-export default function CameraGrid({ cameras, framesByCamera, view, onSelectCamera }) {
+export default function CameraGrid({ cameras, framesByCamera, zonesByCamera = {}, view, onSelectCamera, onToggleView }) {
   const [mainId, setMainId] = useState(cameras[0]?.id);
 
   useEffect(() => {
@@ -23,7 +23,9 @@ export default function CameraGrid({ cameras, framesByCamera, view, onSelectCame
       key={camera.id}
       camera={camera}
       frameData={framesByCamera[camera.id]}
+      zones={zonesByCamera[camera.id] || []}
       onSelect={onSelectCamera}
+      onToggleView={onToggleView}
     />
   );
 

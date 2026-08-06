@@ -29,6 +29,7 @@ class CameraCreate(BaseModel):
     imgsz: Optional[int] = None
     speed_calibration: Optional[SpeedCalibration] = None
     active: bool = True
+    view_enabled: bool = True
 
 
 class CameraUpdate(BaseModel):
@@ -37,6 +38,7 @@ class CameraUpdate(BaseModel):
     imgsz: Optional[int] = None
     speed_calibration: Optional[SpeedCalibration] = None
     active: Optional[bool] = None
+    view_enabled: Optional[bool] = None
 
 
 class TestConnectionRequest(BaseModel):
@@ -49,6 +51,7 @@ class CameraOut(BaseModel):
     rtsp_url: str
     status: str
     active: bool
+    view_enabled: bool = True
     imgsz: Optional[int] = None
     speed_calibration: Optional[dict] = None
 
@@ -84,6 +87,7 @@ def create_camera(payload: CameraCreate):
             "imgsz": payload.imgsz,
             "speed_calibration": payload.speed_calibration.model_dump() if payload.speed_calibration else None,
             "active": payload.active,
+            "view_enabled": payload.view_enabled,
         }
     )
 
@@ -109,6 +113,7 @@ def update_camera(camera_id: int, payload: CameraUpdate):
             "imgsz": payload.imgsz,
             "speed_calibration": payload.speed_calibration.model_dump() if payload.speed_calibration else None,
             "active": payload.active,
+            "view_enabled": payload.view_enabled,
         },
     )
 

@@ -2,8 +2,16 @@
 `app/db/store.py`), bukan tabel database SQL. Dataclass di sini cuma
 representasi in-memory supaya kode lain (routes, stream_worker) bisa akses
 lewat atribut (`camera.rtsp_url`) seperti sebelumnya."""
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
+
+
+def _from_dict(cls, d: dict):
+    """Bangun instance dataclass dari dict, lewati key yang tidak ada supaya
+    default field tetap dipakai (penting untuk kompatibilitas mundur saat
+    ada field baru ditambahkan setelah data lama sudah tersimpan)."""
+    kwargs = {f.name: d[f.name] for f in fields(cls) if f.name in d}
+    return cls(**kwargs)
 
 
 @dataclass
@@ -13,6 +21,7 @@ class Camera:
     rtsp_url: str
     status: str = "offline"  # online | warning | offline
     active: bool = True  # apakah worker harus berjalan utk kamera ini
+    view_enabled: bool = True  # tampilkan live view (JPEG) atau tidak; counting tetap jalan meski false
     imgsz: Optional[int] = None  # override ukuran input inferensi per-kamera
     # Kalibrasi kecepatan: {"pixel_points": [[x1,y1],[x2,y2]], "distance_m": 10.0}
     speed_calibration: Optional[dict] = None
@@ -22,7 +31,7 @@ class Camera:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Camera":
-        return cls(**{k: d.get(k) for k in cls.__dataclass_fields__})
+        return _from_dict(cls, d)
 
 
 @dataclass
@@ -41,4 +50,4 @@ class Zone:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Zone":
-        return cls(**{k: d.get(k) for k in cls.__dataclass_fields__})
+        return _from_dict(cls, d)

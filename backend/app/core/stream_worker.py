@@ -171,8 +171,12 @@ class StreamWorker(threading.Thread):
                     if len(self._frame_times) > 1:
                         span = self._frame_times[-1] - self._frame_times[0]
                         fps = round((len(self._frame_times) - 1) / span, 1) if span > 0 else 0.0
+                    # Dicek fresh tiap tick (bukan cuma tiap ZONE_REFRESH_INTERVAL)
+                    # supaya tombol play/pause di UI terasa responsif.
+                    fresh_camera = store.get_camera(self.camera_id)
+                    view_enabled = fresh_camera.view_enabled if fresh_camera else True
                     self._broadcast_frame_data(
-                        frame, fps, detections, speeds, congestion_status, count_events,
+                        frame, fps, view_enabled, detections, speeds, congestion_status, count_events,
                         wrong_way_events, parking_events, lane_events,
                     )
         finally:
@@ -196,7 +200,7 @@ class StreamWorker(threading.Thread):
         if alerts:
             store.append_alerts(self.camera_id, alerts)
 
-    def _broadcast_frame_data(self, frame, fps, detections, speeds, congestion_status, count_events,
+    def _broadcast_frame_data(self, frame, fps, view_enabled, detections, speeds, congestion_status, count_events,
                                wrong_way_events, parking_events, lane_events):
         height, width = frame.shape[:2]
         payload = {
@@ -206,7 +210,12 @@ class StreamWorker(threading.Thread):
             "fps": fps,
             "frame_width": width,
             "frame_height": height,
-            "frame_jpeg_b64": _encode_frame_b64(frame),
+            # Kalau view_enabled false, JPEG tidak di-encode sama sekali
+            # (hemat CPU + bandwidth) — tapi deteksi/counting/alert di bawah
+            # ini tetap dikirim penuh, jadi counting & alert tetap real-time
+            # walau live view dimatikan.
+            "view_enabled": view_enabled,
+            "frame_jpeg_b64": _encode_frame_b64(frame) if view_enabled else None,
             "detections": [
                 {
                     "track_id": d.track_id,

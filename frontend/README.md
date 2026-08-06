@@ -38,6 +38,12 @@ npm run preview
    (counting / larangan parkir / arah / jalur), lalu simpan.
 3. Dashboard utama menampilkan live feed multi-kamera (layout 2x2 / 1+3 /
    wide / single, bisa diganti dari top bar) lengkap dengan overlay bbox,
-   badge REC/fps, dan status koneksi kamera.
-4. Sidebar kanan menampilkan total kendaraan hari ini, grafik volume per
-   jam, dan panel alert real-time.
+   badge REC/fps, dan status koneksi kamera. Tiap kamera punya 2 tombol
+   kecil di pojok kanan atas:
+   - **◇/◎** — tampilkan/sembunyikan poligon zona di atas live view.
+   - **❚❚/▶** — matikan/nyalakan live view untuk hemat bandwidth & CPU.
+     Saat dimatikan, counting/speed/alert/analitik lain TETAP berjalan
+     di background — cuma gambar videonya yang berhenti dikirim.
+4. Sidebar kanan punya dropdown "Tampilkan Statistik Untuk" (Semua Kamera
+   atau salah satu kamera) yang mengontrol total hari ini, grafik volume
+   per jam, dan panel alert real-time sekaligus.

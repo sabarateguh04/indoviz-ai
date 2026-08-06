@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const CLASS_COLORS = {
   motor: "#f59e0b",
@@ -7,18 +7,37 @@ const CLASS_COLORS = {
   truk: "#dc2626",
 };
 
+const ZONE_COLORS = {
+  counting: "#2563eb",
+  no_parking: "#dc2626",
+  direction: "#16a34a",
+  lane: "#a855f7",
+};
+
 const STATUS_LABEL = {
   online: { text: "Online", dot: "bg-emerald-400" },
   warning: { text: "Warning", dot: "bg-amber-400" },
   offline: { text: "Offline", dot: "bg-red-400" },
 };
 
-function drawOverlay(canvas, frameData) {
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!frameData?.detections) return;
+function drawZones(ctx, zones) {
+  for (const zone of zones) {
+    const color = ZONE_COLORS[zone.tipe_zona] || "#64748b";
+    ctx.strokeStyle = color;
+    ctx.fillStyle = `${color}22`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    zone.koordinat.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
 
-  for (const det of frameData.detections) {
+function drawDetections(ctx, detections) {
+  for (const det of detections) {
     const [x1, y1, x2, y2] = det.bbox;
     const color = CLASS_COLORS[det.kelas] || "#22c55e";
 
@@ -36,37 +55,72 @@ function drawOverlay(canvas, frameData) {
   }
 }
 
-export default function CameraCard({ camera, frameData, onSelect }) {
+function drawOverlay(canvas, frameData, zones, showZones) {
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (showZones && zones?.length) drawZones(ctx, zones);
+  if (frameData?.detections) drawDetections(ctx, frameData.detections);
+}
+
+function IconButton({ title, active, onClick, children }) {
+  return (
+    <button
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`w-7 h-7 flex items-center justify-center rounded text-xs ${
+        active ? "bg-brand-600 text-white" : "bg-black/60 text-white hover:bg-black/80"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export default function CameraCard({ camera, frameData, zones = [], onSelect, onToggleView }) {
   const canvasRef = useRef(null);
+  const [showZones, setShowZones] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !frameData) return;
     canvas.width = frameData.frame_width || canvas.width;
     canvas.height = frameData.frame_height || canvas.height;
-    drawOverlay(canvas, frameData);
-  }, [frameData]);
+    drawOverlay(canvas, frameData, zones, showZones);
+  }, [frameData, zones, showZones]);
 
   const status = STATUS_LABEL[camera.status] || STATUS_LABEL.offline;
+  const viewEnabled = camera.view_enabled !== false;
 
   return (
     <div
       className="relative bg-slate-900 rounded-xl overflow-hidden shadow border border-slate-200 aspect-video cursor-pointer"
       onClick={() => onSelect?.(camera)}
     >
-      {frameData?.frame_jpeg_b64 ? (
+      {viewEnabled && frameData?.frame_jpeg_b64 ? (
         <img
           src={`data:image/jpeg;base64,${frameData.frame_jpeg_b64}`}
           alt={camera.nama}
           className="absolute inset-0 w-full h-full object-contain"
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
-          {camera.status === "offline" ? "Kamera offline" : "Menunggu stream..."}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-slate-400 text-sm text-center px-4">
+          {!viewEnabled ? (
+            <>
+              <span>Live view dimatikan</span>
+              <span className="text-xs text-slate-500">Counting & analitik tetap berjalan di background</span>
+            </>
+          ) : camera.status === "offline" ? (
+            "Kamera offline"
+          ) : (
+            "Menunggu stream..."
+          )}
         </div>
       )}
 
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
 
       {camera.status === "online" && (
         <span className="absolute top-2 left-2 flex items-center gap-1 bg-red-600/90 text-white text-xs font-bold px-2 py-0.5 rounded">
@@ -74,11 +128,27 @@ export default function CameraCard({ camera, frameData, onSelect }) {
         </span>
       )}
 
-      {frameData?.fps !== undefined && (
-        <span className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded font-mono">
-          {frameData.fps.toFixed(1)} fps
-        </span>
-      )}
+      <div className="absolute top-2 right-2 flex items-center gap-1.5">
+        {frameData?.fps !== undefined && viewEnabled && (
+          <span className="bg-black/60 text-white text-xs px-2 py-0.5 rounded font-mono">
+            {frameData.fps.toFixed(1)} fps
+          </span>
+        )}
+        <IconButton
+          title={showZones ? "Sembunyikan poligon zona" : "Tampilkan poligon zona"}
+          active={showZones}
+          onClick={() => setShowZones((v) => !v)}
+        >
+          {showZones ? "◎" : "◇"}
+        </IconButton>
+        <IconButton
+          title={viewEnabled ? "Matikan live view (hemat bandwidth)" : "Nyalakan live view"}
+          active={!viewEnabled}
+          onClick={() => onToggleView?.(camera)}
+        >
+          {viewEnabled ? "❚❚" : "▶"}
+        </IconButton>
+      </div>
 
       <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-xs px-2 py-1 flex items-center justify-between">
         <span className="font-medium truncate">{camera.nama}</span>

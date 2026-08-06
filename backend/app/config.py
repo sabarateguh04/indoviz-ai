@@ -13,8 +13,12 @@ class Settings:
     # supaya tiap file tetap kecil — lihat app/db/store.py.
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", str(BASE_DIR / "app" / "data")))
 
-    # Model YOLO
-    MODEL_PATH: str = os.getenv("MODEL_PATH", str(BASE_DIR / "app" / "models_weights" / "yolo11n.pt"))
+    # Model YOLO — satu model dipakai bersama (shared) semua kamera supaya
+    # hemat VRAM (lihat core/detector.py). Bisa diganti lewat pengaturan
+    # (routes_settings.py) tanpa restart backend.
+    MODELS_DIR: Path = BASE_DIR / "app" / "models_weights"
+    AVAILABLE_MODELS: list[str] = ["yolo11n.pt", "yolov8n.pt", "yolo11s.pt", "yolov8s.pt"]
+    MODEL_PATH: str = os.getenv("MODEL_PATH", str(MODELS_DIR / "yolo11n.pt"))
 
     # Confidence threshold per kelas — motor pakai threshold lebih rendah
     # karena objek kecil dan sering tidak terdeteksi di model nano.

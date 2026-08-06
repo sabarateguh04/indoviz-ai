@@ -27,6 +27,8 @@ export const testCameraConnection = (rtsp_url) =>
     method: "POST",
     body: JSON.stringify({ rtsp_url }),
   });
+export const setCameraViewEnabled = (id, viewEnabled) =>
+  updateCamera(id, { view_enabled: viewEnabled });
 
 // ---- Zona ----
 export const getZones = (cameraId) =>
