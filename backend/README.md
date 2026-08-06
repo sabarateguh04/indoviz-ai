@@ -90,11 +90,11 @@ misalnya `C:/video/contoh.mp4`.
   update kamera, khusus kamera dengan banyak motor kecil. Dites di GPU
   RTX 3060 Ti: yolo11s @ imgsz 960 ≈ 16ms/frame (~60 FPS kapasitas per
   stream), jadi headroom-nya cukup besar untuk beberapa kamera sekaligus.
-- Folder `training/` disiapkan sebagai tempat dataset lokal untuk
-  fine-tuning model nanti (belum ada isinya di tahap ini). Fine-tuning di
-  footage CCTV asli (siang+malam) adalah langkah paling ampuh berikutnya
-  kalau butuh akurasi lebih tinggi & terukur dari yang bisa dicapai model
-  COCO generik di bagian ini.
+- Fine-tuning di footage CCTV asli (siang+malam, termasuk kondisi silau)
+  adalah langkah paling ampuh & terukur kalau model COCO generik masih
+  gagal deteksi di kondisi ekstrem (mis. siluet gelap karena silau lampu).
+  Pipeline lengkapnya (kumpulin frame -> label -> build dataset -> training)
+  ada di `training/` — lihat `training/README.md`.
 - Semua fitur analitik lanjutan (speed, wrong-way, dsb) mewarisi akurasi
   model deteksi dasar — bukan model terpisah.
 

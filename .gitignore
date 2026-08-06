@@ -21,3 +21,5 @@ frontend/.env.local
 .vscode/
 .idea/
 backend/app/snapshots/
+backend/training/dataset/
+backend/training/runs/
