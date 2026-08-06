@@ -26,12 +26,12 @@ Langkah berikutnya: label manual (lihat training/README.md), lalu jalankan
 """
 import argparse
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -126,9 +126,36 @@ def main():
         print("Tidak ada kamera aktif ditemukan.")
         return
 
-    for cam in cameras:
+    # 1 thread per kamera, jalan BARENGAN -- bukan satu-satu. Kalau
+    # sequential, --minutes 60 dgn 10 kamera bakal makan waktu 10 jam
+    # (60 menit x 10). Dgn thread, --minutes 60 tetap cuma 60 menit total
+    # berapa pun jumlah kameranya (tiap kamera punya koneksi RTSP sendiri,
+    # jadi aman jalan paralel -- lihat catatan limit koneksi NVR per kamera
+    # di RINGKASAN_UPDATE.txt kalau kameranya banyak sekaligus).
+    if len(cameras) == 1:
+        cam = cameras[0]
         collect(cam.id, cam.rtsp_url, args.minutes, args.interval, args.motion_threshold,
                 args.motion_cooldown, args.out)
+        return
+
+    print(f"Koleksi paralel dari {len(cameras)} kamera, masing-masing {args.minutes} menit "
+          f"(total waktu tunggu ~{args.minutes} menit, BUKAN dikali jumlah kamera)")
+    threads = [
+        threading.Thread(
+            target=collect,
+            args=(cam.id, cam.rtsp_url, args.minutes, args.interval, args.motion_threshold,
+                  args.motion_cooldown, args.out),
+            daemon=True,
+        )
+        for cam in cameras
+    ]
+    for t in threads:
+        t.start()
+    try:
+        for t in threads:
+            t.join()
+    except KeyboardInterrupt:
+        print("\nDihentikan (Ctrl+C) -- frame yang sudah kesimpan tetap aman.")
 
 
 if __name__ == "__main__":
