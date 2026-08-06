@@ -47,8 +47,19 @@ def extract_detections(result) -> list[Detection]:
         conf = float(confs[i])
         if class_id not in settings.VEHICLE_CLASS_MAP:
             continue
-        if conf < _conf_threshold_for(class_id):
+        if conf < settings.CONF_THRESHOLD_UNKNOWN:
             continue
+
+        # Lolos threshold per-kelas (mis. motor >=0.25, mobil/bus/truk
+        # >=0.4) -> dipakai nama kelas aslinya. Di bawah itu tapi masih
+        # >= CONF_THRESHOLD_UNKNOWN -> model cukup yakin "ada objek" tapi
+        # tidak cukup yakin jenisnya (umum terjadi di footage malam/IR
+        # kontras rendah) -> tetap dihitung, dilabel "tidak_diketahui"
+        # daripada dibuang begitu saja.
+        if conf >= _conf_threshold_for(class_id):
+            class_name = settings.VEHICLE_CLASS_MAP[class_id]
+        else:
+            class_name = settings.UNKNOWN_CLASS_NAME
 
         x1, y1, x2, y2 = (float(v) for v in xyxy[i])
         centroid = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
@@ -57,7 +68,7 @@ def extract_detections(result) -> list[Detection]:
             Detection(
                 track_id=int(track_ids[i]),
                 class_id=class_id,
-                class_name=settings.VEHICLE_CLASS_MAP[class_id],
+                class_name=class_name,
                 conf=conf,
                 bbox=(x1, y1, x2, y2),
                 centroid=centroid,

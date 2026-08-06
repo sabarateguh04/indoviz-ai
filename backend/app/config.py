@@ -25,6 +25,25 @@ class Settings:
     CONF_THRESHOLD_DEFAULT: float = float(os.getenv("CONF_THRESHOLD_DEFAULT", "0.4"))
     CONF_THRESHOLD_MOTOR: float = float(os.getenv("CONF_THRESHOLD_MOTOR", "0.25"))
 
+    # Deteksi yang confidence-nya di bawah threshold per-kelas di atas tapi
+    # masih di atas nilai ini TETAP dihitung (masuk zona counting/dll),
+    # cuma kelasnya dilabel "tidak_diketahui" — daripada dibuang begitu saja.
+    # Ini terutama kepakai utk footage malam/IR yang kontras-nya rendah,
+    # dimana model sering yakin "ada kendaraan" tapi tidak yakin jenisnya.
+    CONF_THRESHOLD_UNKNOWN: float = float(os.getenv("CONF_THRESHOLD_UNKNOWN", "0.15"))
+
+    # Kalau kecerahan rata-rata frame di bawah ini (skala 0-255), frame
+    # dianggap footage malam/low-light dan di-enhance (CLAHE) dulu sebelum
+    # diinferensi — lihat core/detector.py.
+    LOW_LIGHT_BRIGHTNESS_THRESHOLD: float = float(os.getenv("LOW_LIGHT_BRIGHTNESS_THRESHOLD", "80"))
+    ENABLE_LOW_LIGHT_ENHANCE: bool = os.getenv("ENABLE_LOW_LIGHT_ENHANCE", "true").lower() == "true"
+
+    # "auto" -> pakai GPU kalau CUDA kedetect (jauh lebih akurat, karena
+    # bisa pakai model lebih besar + imgsz lebih besar dgn FPS yg sama),
+    # fallback CPU kalau tidak ada. Override manual lewat env kalau perlu
+    # paksa CPU walau ada GPU (mis. GPU dipakai proses lain).
+    YOLO_DEVICE: str = os.getenv("YOLO_DEVICE", "auto")
+
     # Ukuran input inferensi default. Bisa dinaikkan per-kamera (lihat
     # kolom Camera.imgsz) untuk kamera dengan banyak motor/objek kecil.
     IMGSZ_DEFAULT: int = int(os.getenv("IMGSZ_DEFAULT", "640"))
@@ -33,6 +52,10 @@ class Settings:
     # 2=car, 3=motorcycle, 5=bus, 7=truck
     VEHICLE_CLASS_MAP = {2: "mobil", 3: "motor", 5: "bus", 7: "truk"}
     MOTOR_CLASS_ID = 3
+
+    # Label kelas utk deteksi yang lolos CONF_THRESHOLD_UNKNOWN tapi tidak
+    # lolos threshold per-kelas di atas — lihat core/tracker.py.
+    UNKNOWN_CLASS_NAME = "tidak_diketahui"
 
     # Direktori snapshot sementara (dipakai background editor poligon)
     SNAPSHOT_DIR: Path = BASE_DIR / "app" / "snapshots"

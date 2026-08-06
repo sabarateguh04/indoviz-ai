@@ -18,6 +18,7 @@ const SERIES = [
   { key: "mobil", color: "#2563eb", label: "Mobil" },
   { key: "bus", color: "#7c3aed", label: "Bus" },
   { key: "truk", color: "#dc2626", label: "Truk" },
+  { key: "tidak_diketahui", color: "#64748b", label: "Tidak Diketahui" },
 ];
 
 export default function VolumeChart({ cameraId, date, zoneType }) {

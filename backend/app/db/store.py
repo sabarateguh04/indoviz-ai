@@ -35,7 +35,7 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 COUNTS_DIR = DATA_DIR / "counts"
 ALERTS_DIR = DATA_DIR / "alerts"
 
-KELAS_LIST = ["motor", "mobil", "bus", "truk"]
+KELAS_LIST = ["motor", "mobil", "bus", "truk", "tidak_diketahui"]
 
 _EMPTY = {"next_id": 1, "items": []}
 _DEFAULT_SETTINGS = {"model_name": None}

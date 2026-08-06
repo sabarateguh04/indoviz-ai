@@ -1,5 +1,9 @@
 # Frontend — Analitik Kamera (IndoVIS)
 
+> Branch **`main-prod`**: mengikuti backend `main-prod` — nambahin kategori
+> kendaraan **"Tidak Diketahui"** di stat tile, grafik volume, dan overlay
+> bbox (lihat bagian **Update di branch main-prod** di bawah).
+
 Dashboard React + Vite untuk analitik CCTV: manajemen kamera & zona, live
 multi-kamera, grafik volume per jam, dan panel alert (wrong-way/parkir
 liar/pelanggaran jalur).
@@ -47,3 +51,12 @@ npm run preview
 4. Sidebar kanan punya dropdown "Tampilkan Statistik Untuk" (Semua Kamera
    atau salah satu kamera) yang mengontrol total hari ini, grafik volume
    per jam, dan panel alert real-time sekaligus.
+
+## Update di branch main-prod
+
+- **Kategori "Tidak Diketahui"** — kendaraan yang terdeteksi backend tapi
+  confidence-nya tidak cukup tinggi untuk dipastikan jenisnya (umum di
+  footage malam/IR) sekarang tetap dihitung, bukan hilang begitu saja.
+  Muncul di 3 tempat: tile abu-abu di panel statistik (`StatsSidebar.jsx`),
+  series abu-abu di grafik volume per jam (`VolumeChart.jsx`), dan bbox
+  abu-abu di overlay live view (`CameraCard.jsx`).

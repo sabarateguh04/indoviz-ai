@@ -23,6 +23,7 @@ from app.analytics import speed as speed_analytics
 from app.api.routes_ws import ws_manager
 from app.config import settings
 from app.core.detector import VehicleDetector
+from app.core.rtsp_utils import open_capture
 from app.core.state import CameraState
 from app.core.tracker import extract_detections
 from app.core.zones import RuntimeZone
@@ -106,7 +107,7 @@ class StreamWorker(threading.Thread):
         self._load_zones()
 
         detector = VehicleDetector.get_shared()
-        cap = cv2.VideoCapture(rtsp_url)
+        cap = open_capture(rtsp_url)
         consecutive_failures = 0
         last_broadcast = 0.0
 
@@ -118,7 +119,7 @@ class StreamWorker(threading.Thread):
                     self._set_status("offline")
                     time.sleep(RECONNECT_DELAY)
                     cap.release()
-                    cap = cv2.VideoCapture(rtsp_url)
+                    cap = open_capture(rtsp_url)
                     continue
 
                 ok, frame = cap.read()
@@ -128,7 +129,7 @@ class StreamWorker(threading.Thread):
                     time.sleep(0.5)
                     if consecutive_failures >= 10:
                         cap.release()
-                        cap = cv2.VideoCapture(rtsp_url)
+                        cap = open_capture(rtsp_url)
                         consecutive_failures = 0
                     continue
 
@@ -145,40 +146,47 @@ class StreamWorker(threading.Thread):
                     if not camera.active:
                         break  # kamera dinonaktifkan dari UI
 
-                result = detector.track(frame, imgsz=imgsz)
-                detections = extract_detections(result)
+                try:
+                    result = detector.track(frame, imgsz=imgsz)
+                    detections = extract_detections(result)
 
-                for det in detections:
-                    self.state.update_track_position(det.track_id, det.class_name, det.centroid, now)
+                    for det in detections:
+                        self.state.update_track_position(det.track_id, det.class_name, det.centroid, now)
 
-                if now - self._last_cleanup > 10:
-                    self.state.cleanup_stale(now)
-                    self._last_cleanup = now
+                    if now - self._last_cleanup > 10:
+                        self.state.cleanup_stale(now)
+                        self._last_cleanup = now
 
-                count_events = counting.process(detections, self.zones, self.state)
-                speeds = speed_analytics.process(detections, self.state, camera.speed_calibration)
-                wrong_way_events = wrong_way.process(detections, self.zones, self.state)
-                parking_events = illegal_parking.process(detections, self.zones, self.state, frame.shape)
-                congestion_status = congestion.process(detections, self.zones, self.state)
-                lane_events = lane_violation.process(detections, self.zones, self.state)
+                    count_events = counting.process(detections, self.zones, self.state)
+                    speeds = speed_analytics.process(detections, self.state, camera.speed_calibration)
+                    wrong_way_events = wrong_way.process(detections, self.zones, self.state)
+                    parking_events = illegal_parking.process(detections, self.zones, self.state, frame.shape)
+                    congestion_status = congestion.process(detections, self.zones, self.state)
+                    lane_events = lane_violation.process(detections, self.zones, self.state)
 
-                if count_events or wrong_way_events or parking_events or lane_events:
-                    self._persist_events(count_events, wrong_way_events, parking_events, lane_events)
+                    if count_events or wrong_way_events or parking_events or lane_events:
+                        self._persist_events(count_events, wrong_way_events, parking_events, lane_events)
 
-                if now - last_broadcast >= settings.WS_BROADCAST_INTERVAL:
-                    last_broadcast = now
-                    fps = 0.0
-                    if len(self._frame_times) > 1:
-                        span = self._frame_times[-1] - self._frame_times[0]
-                        fps = round((len(self._frame_times) - 1) / span, 1) if span > 0 else 0.0
-                    # Dicek fresh tiap tick (bukan cuma tiap ZONE_REFRESH_INTERVAL)
-                    # supaya tombol play/pause di UI terasa responsif.
-                    fresh_camera = store.get_camera(self.camera_id)
-                    view_enabled = fresh_camera.view_enabled if fresh_camera else True
-                    self._broadcast_frame_data(
-                        frame, fps, view_enabled, detections, speeds, congestion_status, count_events,
-                        wrong_way_events, parking_events, lane_events,
-                    )
+                    if now - last_broadcast >= settings.WS_BROADCAST_INTERVAL:
+                        last_broadcast = now
+                        fps = 0.0
+                        if len(self._frame_times) > 1:
+                            span = self._frame_times[-1] - self._frame_times[0]
+                            fps = round((len(self._frame_times) - 1) / span, 1) if span > 0 else 0.0
+                        # Dicek fresh tiap tick (bukan cuma tiap ZONE_REFRESH_INTERVAL)
+                        # supaya tombol play/pause di UI terasa responsif.
+                        fresh_camera = store.get_camera(self.camera_id)
+                        view_enabled = fresh_camera.view_enabled if fresh_camera else True
+                        self._broadcast_frame_data(
+                            frame, fps, view_enabled, detections, speeds, congestion_status, count_events,
+                            wrong_way_events, parking_events, lane_events,
+                        )
+                except Exception:
+                    # Jangan biarkan error tak terduga di inferensi/analitik
+                    # mematikan thread worker secara diam-diam — kamera akan
+                    # kejebak status terakhir ("online"/"warning") selamanya
+                    # di UI tanpa penjelasan kalau ini tidak ditangkap.
+                    logger.exception("Error saat proses frame kamera_id=%s", self.camera_id)
         finally:
             cap.release()
             self._set_status("offline")

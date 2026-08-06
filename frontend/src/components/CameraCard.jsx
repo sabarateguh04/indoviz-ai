@@ -5,6 +5,7 @@ const CLASS_COLORS = {
   mobil: "#2563eb",
   bus: "#7c3aed",
   truk: "#dc2626",
+  tidak_diketahui: "#64748b",
 };
 
 const ZONE_COLORS = {
