@@ -331,6 +331,37 @@ def get_summary(camera_id: Optional[int] = None, date: Optional[str] = None, zon
     return totals
 
 
+def get_summary_by_camera(date: Optional[str] = None, zone_type: Optional[str] = None) -> list[dict]:
+    """Breakdown total per kamera (bukan agregat semua kamera kayak
+    get_summary) -- dipakai grafik perbandingan antar kamera di halaman
+    Analitik. Terurut dari yang paling ramai."""
+    if date:
+        since, until = _day_range(date)
+    else:
+        since = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        until = None
+
+    zone_map = _zone_type_map() if zone_type else None
+    camera_names = {c.id: c.nama for c in list_cameras()}
+    totals: dict[int, dict] = {}
+    for row in _iter_count_rows(since, until):
+        if zone_map is not None and zone_map.get(row.get("zone_id")) != zone_type:
+            continue
+        bucket = totals.setdefault(row["camera_id"], {k: 0 for k in KELAS_LIST})
+        if row["kelas"] in bucket:
+            bucket[row["kelas"]] += row["jumlah"]
+
+    result = []
+    for cam_id, counts in totals.items():
+        entry = dict(counts)
+        entry["camera_id"] = cam_id
+        entry["camera_nama"] = camera_names.get(cam_id, f"Kamera #{cam_id}")
+        entry["total"] = sum(counts[k] for k in KELAS_LIST)
+        result.append(entry)
+    result.sort(key=lambda e: -e["total"])
+    return result
+
+
 def get_volume(
     camera_id: Optional[int] = None,
     hours: int = 24,
@@ -586,9 +617,14 @@ def _write_jsonl_or_remove(path: Path, kept_lines: list[str]):
         tmp.replace(path)
 
 
+MAX_DELETE_RANGE_DAYS = 366  # batas wajar biar gak kepancing hapus range gak sengaja kebablasan
+
+
 def delete_count_events(
     camera_id: Optional[int] = None,
     date: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     zone_type: Optional[str] = None,
     kelas: Optional[str] = None,
 ) -> int:
@@ -597,17 +633,40 @@ def delete_count_events(
     jangan sampai bisa kehapus SEMUA data cuma krn lupa isi filter. Return
     jumlah baris yang dihapus.
 
-    CATATAN penting: `date` kosong DI SINI artinya "hari ini" (konsisten
-    dgn get_count_events/get_summary), BUKAN "sepanjang masa" -- default
-    operasi destruktif harus yang paling sempit/aman, supaya tidak ada
-    kejutan "klik hapus di tabel yg nampilin data hari ini, eh yang
-    kehapus malah data dari tanggal2 lain juga"."""
-    if camera_id is None and date is None and zone_type is None and kelas is None:
+    Rentang tanggal: pakai `date` (1 hari spesifik) ATAU `date_from`/`date_to`
+    (rentang, salah satu boleh dikosongkan -> dianggap sama dgn yang lain).
+    CATATAN penting: kalau SEMUA parameter tanggal kosong, defaultnya "hari
+    ini" (konsisten dgn get_count_events/get_summary), BUKAN "sepanjang
+    masa" -- default operasi destruktif harus yang paling sempit/aman,
+    supaya tidak ada kejutan "klik hapus di tabel yg nampilin data hari
+    ini, eh yang kehapus malah data dari tanggal2 lain juga"."""
+    if camera_id is None and date is None and date_from is None and date_to is None and zone_type is None and kelas is None:
         raise ValueError("Isi minimal 1 filter (tanggal/kamera/kategori) sebelum menghapus data")
 
-    target_date = date or _date_str(datetime.datetime.now())
+    if date:
+        start_str, end_str = date, date
+    elif date_from or date_to:
+        start_str = date_from or date_to
+        end_str = date_to or date_from
+    else:
+        start_str = end_str = _date_str(datetime.datetime.now())
+
+    try:
+        start_day = datetime.datetime.strptime(start_str, "%Y-%m-%d").date()
+        end_day = datetime.datetime.strptime(end_str, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("Format tanggal harus YYYY-MM-DD") from exc
+    if start_day > end_day:
+        start_day, end_day = end_day, start_day
+    if (end_day - start_day).days + 1 > MAX_DELETE_RANGE_DAYS:
+        raise ValueError(f"Rentang tanggal maksimal {MAX_DELETE_RANGE_DAYS} hari sekali hapus")
+
     zone_type_map = _zone_type_map() if zone_type else None
-    paths = [COUNTS_DIR / f"{target_date}.jsonl"]
+    paths = []
+    d = start_day
+    while d <= end_day:
+        paths.append(COUNTS_DIR / f"{d.isoformat()}.jsonl")
+        d += datetime.timedelta(days=1)
 
     total_deleted = 0
     for path in paths:

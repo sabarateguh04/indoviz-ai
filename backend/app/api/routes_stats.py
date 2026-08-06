@@ -22,6 +22,13 @@ def get_summary(camera_id: Optional[int] = None, date: Optional[str] = None, zon
     return store.get_summary(camera_id, date, zone_type)
 
 
+@router.get("/summary-by-camera")
+def get_summary_by_camera(date: Optional[str] = None, zone_type: Optional[str] = None):
+    """Breakdown total per kamera (bukan diagregat jadi 1 angka) -- buat
+    grafik perbandingan antar kamera di halaman Analitik."""
+    return store.get_summary_by_camera(date, zone_type)
+
+
 @router.get("/volume")
 def get_volume(
     camera_id: Optional[int] = None,
@@ -82,13 +89,16 @@ def get_timeseries(
 def delete_events(
     camera_id: Optional[int] = None,
     date: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     zone_type: Optional[str] = None,
     kelas: Optional[str] = None,
 ):
     """Hapus event counting yang cocok filter -- WAJIB minimal 1 filter
-    diisi (proteksi biar gak kehapus semua data karena lupa filter)."""
+    diisi (proteksi biar gak kehapus semua data karena lupa filter). Pakai
+    `date` (1 hari) ATAU `date_from`/`date_to` (rentang)."""
     try:
-        deleted = store.delete_count_events(camera_id, date, zone_type, kelas)
+        deleted = store.delete_count_events(camera_id, date, date_from, date_to, zone_type, kelas)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"deleted": deleted}

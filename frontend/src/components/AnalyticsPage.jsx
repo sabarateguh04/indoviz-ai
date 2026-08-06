@@ -1,4 +1,6 @@
 import AlertPanel from "./AlertPanel.jsx";
+import CameraComparisonChart from "./CameraComparisonChart.jsx";
+import ClassProportionBar from "./ClassProportionBar.jsx";
 import FilterBar from "./FilterBar.jsx";
 import StatsSidebar from "./StatsSidebar.jsx";
 import TimeSeriesChart from "./TimeSeriesChart.jsx";
@@ -44,6 +46,10 @@ export default function AnalyticsPage({
 
         <div className="flex flex-col gap-3 min-w-0">
           <TimeSeriesChart cameraId={statsCameraId} zoneType={statsZoneType} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+            <ClassProportionBar cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
+            <CameraComparisonChart date={statsDate} zoneType={statsZoneType} />
+          </div>
           <VolumeChart cameraId={statsCameraId} date={statsDate} zoneType={statsZoneType} />
         </div>
       </div>

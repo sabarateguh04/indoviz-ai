@@ -101,6 +101,9 @@ export default function App() {
           view={view}
           onSelectCamera={setZoningCamera}
           onToggleView={handleToggleView}
+          alerts={alerts}
+          cameraNameById={cameraNameById}
+          zoneTypeById={zoneTypeById}
         />
       )}
 
@@ -129,6 +132,7 @@ export default function App() {
 
       {eventsOpen && (
         <DetectionEventsModal
+          cameras={cameras}
           cameraId={statsCameraId}
           date={statsDate}
           zoneType={statsZoneType}

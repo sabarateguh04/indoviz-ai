@@ -60,6 +60,12 @@ export const getStatsSummary = (cameraId, filters = {}) => {
   return request(`/stats/summary${qs ? `?${qs}` : ""}`);
 };
 
+export const getStatsSummaryByCamera = (filters = {}) => {
+  const params = new URLSearchParams(filterParams(filters));
+  const qs = params.toString();
+  return request(`/stats/summary-by-camera${qs ? `?${qs}` : ""}`);
+};
+
 export const getStatsVolume = (cameraId, hours = 24, filters = {}) => {
   const params = new URLSearchParams(filterParams(filters));
   params.set("hours", hours);
@@ -84,10 +90,15 @@ export const getStatsEvents = (cameraId, { limit = 50, offset = 0, kelas, ...fil
   return request(`/stats/events?${params.toString()}`);
 };
 
-// Hapus event counting sesuai filter -- backend WAJIB minimal 1 filter diisi
-export const deleteStatsEvents = (cameraId, { kelas, ...filters } = {}) => {
-  const params = new URLSearchParams(filterParams(filters));
+// Hapus event counting sesuai filter -- backend WAJIB minimal 1 filter diisi.
+// Pakai `date` (1 hari) ATAU `dateFrom`/`dateTo` (rentang).
+export const deleteStatsEvents = (cameraId, { date, dateFrom, dateTo, zoneType, kelas } = {}) => {
+  const params = new URLSearchParams();
   if (cameraId) params.set("camera_id", cameraId);
+  if (date) params.set("date", date);
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+  if (zoneType) params.set("zone_type", zoneType);
   if (kelas) params.set("kelas", kelas);
   return request(`/stats/events?${params.toString()}`, { method: "DELETE" });
 };
