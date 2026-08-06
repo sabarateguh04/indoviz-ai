@@ -44,3 +44,18 @@ def get_alerts(
     """Histori alert (wrong-way / parkir liar / pelanggaran jalur) terbaru,
     opsional difilter per tanggal & tipe zona."""
     return store.get_alerts(camera_id, limit, date, zone_type)
+
+
+@router.get("/events")
+def get_events(
+    camera_id: Optional[int] = None,
+    date: Optional[str] = None,
+    zone_type: Optional[str] = None,
+    kelas: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List mentah tiap event counting (1 baris = 1 kendaraan), buat tabel
+    "Data Deteksi" di frontend -- beda dari /summary & /volume yang sudah
+    teragregasi. Terbaru dulu, dgn pagination (limit/offset)."""
+    return store.get_count_events(camera_id, date, zone_type, kelas, limit, offset)

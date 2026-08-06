@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
-const CLASS_COLORS = {
-  motor: "#f59e0b",
-  mobil: "#2563eb",
-  bus: "#7c3aed",
-  truk: "#dc2626",
-  tidak_diketahui: "#64748b",
-};
+import { VEHICLE_CLASS_COLORS } from "../lib/vehicleClasses.js";
 
 const ZONE_COLORS = {
   counting: "#2563eb",
@@ -40,7 +33,7 @@ function drawZones(ctx, zones) {
 function drawDetections(ctx, detections) {
   for (const det of detections) {
     const [x1, y1, x2, y2] = det.bbox;
-    const color = CLASS_COLORS[det.kelas] || "#22c55e";
+    const color = VEHICLE_CLASS_COLORS[det.kelas] || "#22c55e";
 
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;

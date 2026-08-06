@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AlertPanel from "./components/AlertPanel.jsx";
 import CameraGrid from "./components/CameraGrid.jsx";
 import CameraManager from "./components/CameraManager.jsx";
+import DetectionEventsModal from "./components/DetectionEventsModal.jsx";
 import FilterBar from "./components/FilterBar.jsx";
 import StatsSidebar from "./components/StatsSidebar.jsx";
 import TopBar from "./components/TopBar.jsx";
@@ -18,6 +19,7 @@ export default function App() {
   const [zonesByCamera, setZonesByCamera] = useState({});
   const [view, setView] = useState("2x2");
   const [managerOpen, setManagerOpen] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(false);
   const [zoningCamera, setZoningCamera] = useState(null);
   const [statsCameraId, setStatsCameraId] = useState(null); // null = semua kamera
   const [statsDate, setStatsDate] = useState(null); // null = live/hari ini
@@ -87,6 +89,7 @@ export default function App() {
         view={view}
         onChangeView={setView}
         onOpenManager={() => setManagerOpen(true)}
+        onOpenEvents={() => setEventsOpen(true)}
       />
 
       <div className="flex-1 flex gap-3 p-3 overflow-hidden">
@@ -130,6 +133,16 @@ export default function App() {
       )}
 
       {zoningCamera && <ZoneEditor camera={zoningCamera} onClose={handleCloseZoneEditor} />}
+
+      {eventsOpen && (
+        <DetectionEventsModal
+          cameraId={statsCameraId}
+          date={statsDate}
+          zoneType={statsZoneType}
+          cameraNameById={cameraNameById}
+          onClose={() => setEventsOpen(false)}
+        />
+      )}
     </div>
   );
 }

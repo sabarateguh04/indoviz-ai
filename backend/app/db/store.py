@@ -16,6 +16,16 @@ histori tiap kali ada event baru.
 Satu lock global dipakai untuk semua operasi baca/tulis — cukup aman dan
 sederhana untuk skala target (8-15 stream), karena tiap event (counting/
 alert) jarang terjadi dibanding jumlah frame yang diproses.
+
+CATATAN WAKTU: semua timestamp di modul ini SENGAJA pakai jam LOKAL server
+(`datetime.datetime.now()`), BUKAN UTC (`utcnow()`). App ini single-locale
+(dipakai di WIB, UTC+7) dan "hari ini"/"jam sekian" itu maknanya jam
+dinding operator, bukan UTC. Sebelumnya sempat pakai `utcnow()` dan itu
+BUG -- filter tanggal "hari ini" bisa nampilin 0 (event dari jam 00:00-
+07:00 WIB kehitung "kemarin" secara UTC), dan kolom jam di grafik volume
+kegeser 7 jam dari jam dinding asli. Kalau nanti mau dukung multi-timezone,
+ganti ke datetime timezone-aware (`datetime.now(ZoneInfo(...))`) di sini,
+bukan balik ke naive UTC.
 """
 import datetime
 import json
@@ -245,12 +255,22 @@ def _append_lines(path: Path, lines: list[str]):
 
 def append_count_events(camera_id: int, events: list, when: Optional[datetime.datetime] = None):
     """events: list objek dari `analytics/counting.py` (punya .zone_id, .kelas)."""
-    when = when or datetime.datetime.utcnow()
+    when = when or datetime.datetime.now()
     jam = when.replace(minute=0, second=0, microsecond=0)
     path = COUNTS_DIR / f"{_date_str(when)}.jsonl"
     lines = [
         json.dumps(
-            {"camera_id": camera_id, "zone_id": ev.zone_id, "kelas": ev.kelas, "jumlah": 1, "jam": jam.isoformat()},
+            {
+                "camera_id": camera_id,
+                "zone_id": ev.zone_id,
+                "kelas": ev.kelas,
+                "jumlah": 1,
+                "jam": jam.isoformat(),
+                # Timestamp presisi (bukan cuma dibulatkan ke jam) -- dipakai
+                # tabel "Data Deteksi" di frontend. `jam` (dibulatkan) tetap
+                # dipertahankan apa adanya krn dipakai bucketing get_volume().
+                "waktu": when.isoformat(),
+            },
             ensure_ascii=False,
         )
         for ev in events
@@ -266,7 +286,7 @@ def _day_range(date_str: str) -> tuple[datetime.datetime, datetime.datetime]:
 
 
 def _iter_count_rows(since: datetime.datetime, until: Optional[datetime.datetime] = None):
-    until = until or datetime.datetime.utcnow()
+    until = until or datetime.datetime.now()
     day = since.date()
     end_day = until.date()
     one_day = datetime.timedelta(days=1)
@@ -289,7 +309,7 @@ def get_summary(camera_id: Optional[int] = None, date: Optional[str] = None, zon
     if date:
         since, until = _day_range(date)
     else:
-        since = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        since = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         until = None
 
     zone_map = _zone_type_map() if zone_type else None
@@ -314,7 +334,7 @@ def get_volume(
     if date:
         since, until = _day_range(date)
     else:
-        since = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+        since = datetime.datetime.now() - datetime.timedelta(hours=hours)
         until = None
 
     zone_map = _zone_type_map() if zone_type else None
@@ -337,11 +357,59 @@ def get_volume(
     return result
 
 
+def get_count_events(
+    camera_id: Optional[int] = None,
+    date: Optional[str] = None,
+    zone_type: Optional[str] = None,
+    kelas: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """List mentah tiap event counting (1 baris = 1 kendaraan lolos zona) --
+    dipakai tabel "Data Deteksi" di frontend, beda dari get_summary/get_volume
+    yang sudah teragregasi. Terbaru dulu."""
+    if date:
+        since, until = _day_range(date)
+    else:
+        since = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        until = None
+
+    zone_type_map = _zone_type_map()  # zone_id -> tipe_zona, selalu dibangun (dipakai buat tampilan JUGA, bukan cuma filter)
+    zone_names = {z.id: z.nama for z in list_zones()}
+    camera_names = {c.id: c.nama for c in list_cameras()}
+
+    rows = []
+    for row in _iter_count_rows(since, until):
+        if camera_id is not None and row["camera_id"] != camera_id:
+            continue
+        if zone_type is not None and zone_type_map.get(row.get("zone_id")) != zone_type:
+            continue
+        if kelas is not None and row["kelas"] != kelas:
+            continue
+        rows.append(
+            {
+                # Event lama (sblm field `waktu` ditambahkan) fallback ke `jam`
+                # (presisi jam bulat) supaya tetap tampil, bukan error.
+                "waktu": row.get("waktu") or row["jam"],
+                "camera_id": row["camera_id"],
+                "camera_nama": camera_names.get(row["camera_id"], f"Kamera #{row['camera_id']}"),
+                "zone_id": row.get("zone_id"),
+                "zone_nama": zone_names.get(row.get("zone_id")) or "",
+                "zone_tipe": zone_type_map.get(row.get("zone_id")),
+                "kelas": row["kelas"],
+            }
+        )
+
+    rows.sort(key=lambda r: r["waktu"], reverse=True)
+    total = len(rows)
+    return {"items": rows[offset : offset + limit], "total": total}
+
+
 # ==================== Alert (per tanggal, JSONL append-only) ====================
 
 def append_alerts(camera_id: int, alerts: list[dict], when: Optional[datetime.datetime] = None):
     """alerts: list dict {zone_id, tipe, track_id, pesan}."""
-    when = when or datetime.datetime.utcnow()
+    when = when or datetime.datetime.now()
     path = ALERTS_DIR / f"{_date_str(when)}.jsonl"
     ts_ms = int(when.timestamp() * 1000)
     lines = [

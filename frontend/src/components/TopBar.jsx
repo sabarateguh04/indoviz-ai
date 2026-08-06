@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import DisplaySettings from "./DisplaySettings.jsx";
 import ModelSelector from "./ModelSelector.jsx";
 
-export default function TopBar({ connected, view, onChangeView, onOpenManager }) {
+export default function TopBar({ connected, view, onChangeView, onOpenManager, onOpenEvents }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -36,6 +36,13 @@ export default function TopBar({ connected, view, onChangeView, onOpenManager })
 
         <ModelSelector />
         <DisplaySettings />
+
+        <button
+          onClick={onOpenEvents}
+          className="px-3 py-1.5 rounded-md border border-white/30 text-white text-sm font-semibold hover:bg-brand-600"
+        >
+          Data Deteksi
+        </button>
 
         <button
           onClick={onOpenManager}

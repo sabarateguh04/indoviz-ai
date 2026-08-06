@@ -74,6 +74,16 @@ export const getAlerts = (cameraId, limit = 50, filters = {}) => {
   return request(`/stats/alerts?${params.toString()}`);
 };
 
+// `filters` opsional juga menerima { kelas } di samping date/zoneType
+export const getStatsEvents = (cameraId, { limit = 50, offset = 0, kelas, ...filters } = {}) => {
+  const params = new URLSearchParams(filterParams(filters));
+  params.set("limit", limit);
+  params.set("offset", offset);
+  if (cameraId) params.set("camera_id", cameraId);
+  if (kelas) params.set("kelas", kelas);
+  return request(`/stats/events?${params.toString()}`);
+};
+
 // ---- Pengaturan (model YOLO) ----
 export const getModelSettings = () => request("/settings/model");
 export const setModelSettings = (modelName) =>
